@@ -134,7 +134,9 @@ Full WebUI spec: [`docs/WEBUI_SPEC.md`](docs/WEBUI_SPEC.md) (Korean)
 | `--prompt` | — | JSON caption string (inline) |
 | `--prompt-file` | — | File containing JSON caption |
 | `--repo` | `ideogram-ai/ideogram-4-fp8` | HuggingFace repo ID |
-| `--resolution` | `1024` | Square output (multiple of 16) |
+| `--width` | — | Output width, multiple of 16 (overrides `--resolution`) |
+| `--height` | — | Output height, multiple of 16 (overrides `--resolution`) |
+| `--resolution` | `1024` | Square output (multiple of 16). Ignored if `--width`/`--height` set |
 | `--preset` | `V4_QUALITY_48` | `V4_QUALITY_48` / `V4_DEFAULT_20` / `V4_TURBO_12` |
 | `--seed` | `20260608` | Random seed |
 | `--out` | **required** | Output PNG path |
