@@ -10,6 +10,7 @@ venv/
 # Outputs
 *.png
 !result.png
+!docs/webui-screenshot.png
 outputs/
 server/output/
 server/data/

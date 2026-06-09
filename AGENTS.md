@@ -11,9 +11,6 @@
 - **WebUI** (`webui/`) React + TypeScript + Vite. Proxies `/api/*` to `:8000` via
   `vite.config.ts`.
 
-Dead code: `server/worker.py` is a near-duplicate of `model_daemon.py` — not wired in.
-Stray file: `--width` at repo root (zero bytes).
-
 ## Commands
 
 ### One-shot launch (everything)

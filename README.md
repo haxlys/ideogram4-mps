@@ -111,6 +111,8 @@ python server/main.py
 cd webui && pnpm dev
 ```
 
+![WebUI screenshot](docs/webui-screenshot.png)
+
 ## WebUI features
 
 - **Model Panel** — Load / Unload controls with live status indicator (idle / loading / loaded)
