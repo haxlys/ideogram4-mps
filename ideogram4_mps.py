@@ -15,6 +15,7 @@ Usage:
     python ideogram4_mps.py --prompt-file caption.json --out result.png
     python ideogram4_mps.py --prompt '{"high_level_description":"..."}' --out out.png
     python ideogram4_mps.py --prompt-file cap.json --resolution 512 --preset V4_TURBO_12 --out out.png
+    python ideogram4_mps.py --prompt-file cap.json --width 832 --height 1248 --out out.png
 
 Presets: V4_QUALITY_48 (best), V4_DEFAULT_20, V4_TURBO_12
 Resolutions: any multiple of 16 (512, 768, 1024, 1536, 2048)
@@ -212,10 +213,22 @@ def main():
         help=f"HuggingFace repo ID (default: {DEFAULT_REPO})",
     )
     parser.add_argument(
+        "--width",
+        type=int,
+        default=None,
+        help="Output width, multiple of 16 (overrides --resolution)",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=None,
+        help="Output height, multiple of 16 (overrides --resolution)",
+    )
+    parser.add_argument(
         "--resolution",
         type=int,
         default=1024,
-        help="Square resolution, multiple of 16 (default: 1024)",
+        help="Square resolution, multiple of 16 (default: 1024). Ignored if --width/--height set.",
     )
     parser.add_argument(
         "--preset",
@@ -257,19 +270,29 @@ def main():
     from ideogram4.sampler_configs import PRESETS
 
     preset = PRESETS[args.preset]
-    res = args.resolution
-    if res % 16:
-        res = (res // 16) * 16
-        logger.info("Resolution rounded to %d", res)
+
+    if args.width is not None and args.height is not None:
+        w, h = args.width, args.height
+    elif args.width is not None or args.height is not None:
+        parser.error("--width and --height must be set together")
+    else:
+        w = h = args.resolution
+
+    if w % 16:
+        w = (w // 16) * 16
+        logger.info("Width rounded to %d", w)
+    if h % 16:
+        h = (h // 16) * 16
+        logger.info("Height rounded to %d", h)
 
     logger.info("Preset: %s  |  %d steps  |  mu=%s std=%s", args.preset, preset.num_steps, preset.mu, preset.std)
-    logger.info("Resolution: %dx%d  |  Seed: %d", res, res, args.seed)
+    logger.info("Resolution: %dx%d  |  Seed: %d", w, h, args.seed)
 
     t0 = time.time()
     images = pipe(
         prompts=prompt,
-        height=res,
-        width=res,
+        height=h,
+        width=w,
         num_steps=preset.num_steps,
         guidance_schedule=preset.guidance_schedule,
         mu=preset.mu,
@@ -285,7 +308,7 @@ def main():
 
     log = {
         "preset": args.preset,
-        "resolution": [res, res],
+        "resolution": [w, h],
         "steps": preset.num_steps,
         "seed": args.seed,
         "generation_seconds": round(gen_s, 1),
