@@ -2,12 +2,15 @@
 
 ## Architecture
 
-3-tier, local-only: **WebUI (:5173) → FastAPI (:8000) → Daemon (:8001)**
+2-tier, local-only: **WebUI (:5173) → FastAPI (:8000)**
 
-- **Daemon** (`server/model_daemon.py`) owns the Ideogram 4 pipeline in memory. Survives
-  API server restarts. Must start first.
-- **FastAPI** (`server/main.py`) thin proxy. Validates requests, writes PNGs to disk,
-  manages SQLite persistence.
+- **FastAPI** (`server/main.py`) owns the Ideogram 4 pipeline in the same process.
+  Handles model load/unload, generation, image persistence, and SQLite storage.
+  Uses `threading.Thread` for pipeline load and generation (FastAPI is async,
+  but pipeline ops are CPU-only).
+- **Model management** (`server/model_daemon.py`) is a plain module with no HTTP
+  server. Imported directly by `main.py`. Exposes `handle_load()`, `handle_unload()`,
+  `handle_status()`, `get_pipeline()`.
 - **WebUI** (`webui/`) React + TypeScript + Vite. Proxies `/api/*` to `:8000` via
   `vite.config.ts`.
 
@@ -17,14 +20,13 @@
 ```bash
 ./run.sh
 ```
-Kills existing processes on 8000/8001/5173, installs deps, starts daemon→server→webui.
+Kills existing processes on 8000/5173, installs deps, starts server→webui.
 Cleans up on SIGINT/SIGTERM/EXIT.
 
-### Manual (debugging — 3 terminals in this order)
+### Manual (debugging — 2 terminals in this order)
 ```bash
-python server/model_daemon.py   # terminal 1
-python server/main.py            # terminal 2
-cd webui && pnpm dev             # terminal 3
+python server/main.py            # terminal 1
+cd webui && pnpm dev             # terminal 2
 ```
 
 ### CLI generation (no server needed)
@@ -54,10 +56,9 @@ cd webui && pnpm lint            # ESLint
   doesn't support it). Never override.
 - **Apple Silicon only.** M1+ required. ~50 GB unified memory for 1024×1024
   V4_QUALITY_48. No CUDA/NVIDIA support.
-- **Daemon must be running** for any WebUI operation. The server is a thin
-  proxy — it errors gracefully ("Daemon unreachable") when daemon is down.
-- **Daemon uses `ThreadingHTTPServer`**, not `asyncio`. The `httpx.Client` in
-  `main.py` is synchronous (not `AsyncClient`).
+- **Generation uses `threading.Thread`**, not `asyncio`. The pipeline runs on
+  the main process in a daemon thread. This avoids GIL issues since pytorch
+  operations release the GIL.
 
 ## Logging
 

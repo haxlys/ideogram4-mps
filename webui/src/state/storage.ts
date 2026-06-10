@@ -25,10 +25,11 @@ export function saveLastForm(form: FormState) {
   saveLastFormApi(JSON.stringify(form)).catch(() => {});
 }
 
-export async function savePrompt(form: FormState) {
+export async function savePrompt(form: FormState): Promise<number> {
   const entry: PromptEntry = { ...form, _savedAt: new Date().toISOString() };
-  await savePromptApi(form.hld || "(empty)", JSON.stringify(entry));
+  const result = await savePromptApi(form.hld || "(empty)", JSON.stringify(entry));
   _promptsCache = null;
+  return result.id;
 }
 
 export async function loadPromptHistory(): Promise<PromptEntry[]> {
@@ -54,6 +55,7 @@ export async function loadImages(): Promise<ImageEntry[]> {
       url: `/api/images/${r.id}/file`,
       hld: r.hld,
       time: r.created_at ? new Date(r.created_at).toLocaleTimeString() : "",
+      prompt_id: r.prompt_id,
     }));
     return _imagesCache;
   } catch {

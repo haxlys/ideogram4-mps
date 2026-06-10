@@ -34,8 +34,10 @@ export function useGeneratePolling() {
               url: data.image.url ?? "",
               hld: data.image.hld ?? "",
               time: data.image.time ?? new Date().toLocaleTimeString(),
+              prompt_id: data.image.prompt_id,
             };
             dispatch({ type: "ADD_IMAGE", entry });
+            dispatch({ type: "SHOW_RESULT", entry });
             dispatch({
               type: "SET_GEN_STATUS",
               status: "done",

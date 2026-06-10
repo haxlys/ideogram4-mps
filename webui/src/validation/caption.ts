@@ -1,14 +1,37 @@
-import type { FormState } from "@/state/types";
+import type { FormState, FormElement } from "@/state/types";
 
-export function buildCaptionJson(form: FormState) {
-  if (form.rawJson.trim()) {
-    try {
-      return JSON.parse(form.rawJson);
-    } catch {
-      // fall through to form-built JSON
-    }
+export function captionToForm(caption: Record<string, unknown>): Partial<FormState> {
+  const sd = (caption.style_description as Record<string, unknown>) || {};
+  const cd = (caption.compositional_deconstruction as Record<string, unknown>) || {};
+  const elsRaw = (cd.elements as Array<Record<string, unknown>>) || [];
+
+  const els: FormElement[] = elsRaw.filter((el) => el.desc || el.text || el.type).map((el) => ({
+    id: crypto.randomUUID(),
+    type: (el.type === "text" ? "text" : "obj") as FormElement["type"],
+    text: String(el.text || ""),
+    bbox: Array.isArray(el.bbox) ? (el.bbox as number[]).join(",") : "",
+    desc: String(el.desc || ""),
+  }));
+
+  if (els.length === 0) {
+    els.push({ id: crypto.randomUUID(), type: "obj", text: "", bbox: "", desc: "" });
   }
 
+  const cpArr = Array.isArray(sd.color_palette) ? sd.color_palette as string[] : [];
+
+  return {
+    hld: String(caption.high_level_description || ""),
+    aes: String(sd.aesthetics || ""),
+    light: String(sd.lighting || ""),
+    med: String(sd.medium || "photograph") as FormState["med"],
+    cam: String(sd.photo || sd.art_style || ""),
+    cp: cpArr.join(", "),
+    bg: String(cd.background || ""),
+    els,
+  };
+}
+
+export function buildCaptionJson(form: FormState) {
   const cp = form.cp
     .split(",")
     .flatMap((s) => {

@@ -43,6 +43,7 @@ export interface ImageEntry {
   url: string;
   hld: string;
   time: string;
+  prompt_id?: number | null;
 }
 
 export interface PromptEntry extends FormState {
@@ -59,7 +60,8 @@ export type AppAction =
   | { type: "UPDATE_ELEMENT"; index: number; field: keyof FormElement; value: string }
   | { type: "SET_GEN_STATUS"; status: GenStatus; msg?: string; taskId?: string | null; progress?: number; totalSteps?: number }
   | { type: "ADD_IMAGE"; entry: ImageEntry }
-  | { type: "SET_IMAGES"; entries: ImageEntry[] };
+  | { type: "SET_IMAGES"; entries: ImageEntry[] }
+  | { type: "SHOW_RESULT"; entry: ImageEntry | null };
 
 export const DEFAULT_FORM: FormState = {
   hld: "",

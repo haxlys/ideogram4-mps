@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { useAppState } from "@/state/context";
 import { loadPromptHistory, deletePrompt } from "@/state/storage";
+import { getImages } from "@/api/client";
 import type { PromptEntry } from "@/state/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Trash2 } from "lucide-react";
@@ -18,15 +20,41 @@ interface PromptHistoryProps {
 export function PromptHistory({ sidebar }: PromptHistoryProps) {
   const { state, dispatch } = useAppState();
   const [entries, setEntries] = useState<PromptEntry[]>([]);
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadPromptHistory().then(setEntries);
   }, []);
 
-  const restore = useCallback((entry: PromptEntry) => {
+  const restore = useCallback(async (entry: PromptEntry) => {
     const { _savedAt, _id, ...form } = entry;
     dispatch({ type: "RESTORE_FORM", form });
-  }, [dispatch]);
+    if (_id != null) {
+      try {
+        const images = await getImages(_id);
+        if (images.length > 0) {
+          const img = images[0];
+          dispatch({
+            type: "SHOW_RESULT",
+            entry: {
+              id: img.id,
+              url: `/api/images/${img.id}/file`,
+              hld: img.hld,
+              time: img.created_at ? new Date(img.created_at).toLocaleTimeString() : "",
+              prompt_id: _id,
+            },
+          });
+        } else {
+          dispatch({ type: "SHOW_RESULT", entry: null });
+        }
+      } catch {
+        dispatch({ type: "SHOW_RESULT", entry: null });
+      }
+    }
+    if (sidebar) {
+      navigate({ to: "/" });
+    }
+  }, [dispatch, sidebar, navigate]);
 
   const handleDelete = useCallback((e: React.MouseEvent, entry: PromptEntry) => {
     e.stopPropagation();

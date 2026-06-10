@@ -66,14 +66,9 @@ Browser (localhost:5173)
     │ HTTP (Vite dev proxy /api → localhost:8000)
     ▼
 FastAPI Server (server/main.py, port 8000)
-    │  REST API: model control, generation, images, prompts, form state
-    │  SQLite persistence via server/db.py
-    │
-    │ HTTP (httpx)
-    ▼
-Model Daemon (server/model_daemon.py, port 8001)
-    │  Owns the Ideogram4Pipeline in memory. Survives API server restarts.
-    │  ThreadingHTTPServer, async generation with progress tracking.
+    │  Owns the Ideogram4Pipeline directly in the same process.
+    │  Model load/unload, generation, image persistence, SQLite.
+    │  Uses threading.Thread for pipeline ops.
     │
     ▼
 Ideogram 4 Pipeline (FP8 → bf16 on CPU → MPS)
@@ -87,27 +82,23 @@ Ideogram 4 Pipeline (FP8 → bf16 on CPU → MPS)
 
 | Port | Process | Role |
 |------|---------|------|
-| 8001 | `model_daemon.py` | Model owner (pipeline in memory) |
-| 8000 | `main.py` | FastAPI server, proxy to daemon, SQLite |
+| 8000 | `main.py` | FastAPI server, pipeline owner, SQLite |
 | 5173 | Vite dev server | React WebUI with proxy to :8000 |
 
 ### Startup flow (`./run.sh`)
 
 1. Installs Python + Node dependencies
-2. Kills any existing processes on ports 8000 / 8001 / 5173
-3. Starts daemon (port 8001), server (port 8000), webui (port 5173) in parallel
+2. Kills any existing processes on ports 8000 / 5173
+3. Starts server (port 8000) and webui (port 5173) in parallel
 4. Cleans up all processes on SIGINT / SIGTERM / EXIT
 
 ### Manual startup (for debugging)
 
 ```bash
-# Terminal 1: Daemon
-python server/model_daemon.py
-
-# Terminal 2: API Server
+# Terminal 1: API Server
 python server/main.py
 
-# Terminal 3: WebUI
+# Terminal 2: WebUI
 cd webui && pnpm dev
 ```
 
@@ -165,7 +156,7 @@ Full format reference: https://github.com/ideogram-oss/ideogram4/blob/main/docs/
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/model/status` | Model daemon state (`idle` / `loading` / `loaded`) |
-| `POST` | `/api/model/load` | Trigger model load (daemon persists across server restarts) |
+| `POST` | `/api/model/load` | Trigger model load |
 | `POST` | `/api/model/unload` | Unload model from memory |
 | `POST` | `/api/generate` | Submit generation task (JSON caption + params) |
 | `GET` | `/api/status/{task_id}` | Poll generation progress and result |
@@ -196,8 +187,7 @@ All processes write structured runtime logs to `logs/` (gitignored):
 | Process | Log file pattern | Content |
 |---------|-----------------|---------|
 | CLI (`ideogram4_mps.py`) | `logs/ideogram4_mps-<ts>.log` | Download, dequant, loading, generation, output |
-| Daemon (`model_daemon.py`) | `logs/daemon-<ts>.log` | Model lifecycle, generation tasks, errors |
-| Server (`main.py`) | `logs/server-<ts>.log` | HTTP requests, API calls, daemon proxy, uvicorn |
+| Server (`main.py`) | `logs/server-<ts>.log` | HTTP requests, model lifecycle, generation, uvicorn |
 
 Logs include timestamps, severity level, and structured messages. Set
 `IDEOGRAM4_LOG_DIR` to override the default `logs/` directory.

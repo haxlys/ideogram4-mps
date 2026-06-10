@@ -3,6 +3,7 @@ import { useAppState } from "@/state/context";
 import { SceneDesc } from "./SceneDesc";
 import { StyleSettings } from "./StyleSettings";
 import { Composition } from "./Composition";
+import { QuickPrompt } from "./QuickPrompt";
 import { Textarea } from "@/components/ui/textarea";
 
 export function CaptionEditor() {
@@ -30,6 +31,7 @@ export function CaptionEditor() {
 
       {tab === "form" ? (
         <div className="space-y-5">
+          <QuickPrompt />
           <SceneDesc />
           <StyleSettings />
           <Composition />

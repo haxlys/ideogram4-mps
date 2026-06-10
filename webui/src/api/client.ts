@@ -13,6 +13,7 @@ interface GenerateRequest {
   height: number;
   preset: string;
   seed: number;
+  prompt_id?: number | null;
 }
 
 interface GenerateResponse {
@@ -24,6 +25,7 @@ interface TaskImage {
   url: string;
   hld: string;
   time: string;
+  prompt_id?: number | null;
 }
 
 interface TaskStatusResponse {
@@ -79,10 +81,23 @@ export async function verifyCaption(caption: object) {
   });
 }
 
-interface ImageRow { id: number; created_at: string; hld: string; width: number; height: number; preset: string; seed: number; file_path: string; }
+interface MagicPromptResponse {
+  caption: object;
+  model: string;
+}
+
+export async function magicPrompt(prompt: string, width: number, height: number) {
+  return request<MagicPromptResponse>("/api/magic-prompt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, width, height }),
+  });
+}
+
+interface ImageRow { id: number; created_at: string; hld: string; width: number; height: number; preset: string; seed: number; file_path: string; prompt_id?: number | null; }
 interface PromptRow { id: number; saved_at: string; hld: string; form_json: string; }
 
-export async function getImages() { return request<ImageRow[]>('/api/images'); }
+export async function getImages(promptId?: number) { return request<ImageRow[]>(`/api/images${promptId != null ? `?prompt_id=${promptId}` : ''}`); }
 export async function getPrompts() { return request<PromptRow[]>('/api/prompts'); }
 export async function savePromptApi(hld: string, formJson: string) { return request<{id:number}>('/api/prompts', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({hld, form_json: formJson}) }); }
 export async function deletePromptApi(promptId: number) { return request<{ok:boolean}>(`/api/prompts/${promptId}`, { method: 'DELETE' }); }

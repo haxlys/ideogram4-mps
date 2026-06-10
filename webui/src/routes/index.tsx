@@ -1,5 +1,5 @@
-import { useCallback } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAppState } from "@/state/context";
 import { useFormAutosave } from "@/hooks/useFormAutosave";
 import { useGeneratePolling } from "@/hooks/useGeneratePolling";
@@ -12,8 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { Play } from "lucide-react";
-import { useEffect } from "react";
+import { Play, X, Download, ExternalLink } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: EditorPage,
@@ -54,27 +53,64 @@ function EditorPage() {
     savePrompt({
       ...state.form,
       hld: state.form.rawJson.trim() ? (caption.high_level_description || state.form.hld) : state.form.hld,
-    });
-    dispatch({ type: "SET_GEN_STATUS", status: "submitting", msg: "Submitting…" });
+    }).then((promptId) => {
+      dispatch({ type: "SET_GEN_STATUS", status: "submitting", msg: "Submitting…" });
 
-    try {
-      const res = await submitGenerate({
+      submitGenerate({
         caption,
         width: state.form.w,
         height: state.form.h,
         preset: state.form.preset,
         seed: Number(state.form.seed) || Math.floor(Math.random() * 2**32),
+        prompt_id: promptId,
+      }).then((res) => {
+        dispatch({ type: "SET_GEN_STATUS", status: "running", msg: "Starting…", taskId: res.task_id });
+        startPolling(res.task_id);
+      }).catch((e) => {
+        dispatch({ type: "SET_GEN_STATUS", status: "error", msg: String(e) });
       });
-
-      dispatch({ type: "SET_GEN_STATUS", status: "running", msg: "Starting…", taskId: res.task_id });
-      startPolling(res.task_id);
-    } catch (e) {
+    }).catch((e) => {
       dispatch({ type: "SET_GEN_STATUS", status: "error", msg: String(e) });
-    }
+    });
   }, [state, dispatch, startPolling]);
+
+  const prevGenStatus = useRef(state.genStatus);
+
+  useEffect(() => {
+    if (prevGenStatus.current !== "done" && state.genStatus === "done") {
+      toast.success("Image generated successfully", {
+        description: "Scroll up to view the result.",
+      });
+    }
+    prevGenStatus.current = state.genStatus;
+  }, [state.genStatus]);
 
   const isGenerating = state.genStatus === "submitting" || state.genStatus === "running";
   const canGenerate = state.modelState === "loaded" && !isGenerating;
+  const resultImage = state.resultImage;
+
+  const handleDismissResult = () => {
+    dispatch({ type: "SHOW_RESULT", entry: null });
+    if (state.genStatus === "done") {
+      dispatch({ type: "SET_GEN_STATUS", status: "idle" });
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!resultImage) return;
+    try {
+      const res = await fetch(resultImage.url);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ideogram4-${resultImage.id}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to download image");
+    }
+  };
 
   return (
     <ScrollArea className="flex-1">
@@ -97,6 +133,54 @@ function EditorPage() {
               )}
               {isGenerating ? "Generating…" : "Generate"}
             </Button>
+
+            {resultImage && (
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/50">
+                  <h2 className="text-[12px] font-semibold tracking-[-0.01em] text-foreground flex items-center gap-1.5">
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    Result
+                  </h2>
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Download"
+                      onClick={handleDownload}
+                    >
+                      <Download className="size-3" />
+                    </Button>
+                    <Link
+                      to="/gallery"
+                      className="inline-flex items-center justify-center size-6 rounded-md hover:bg-muted transition-colors"
+                      aria-label="View in gallery"
+                    >
+                      <ExternalLink className="size-3" />
+                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Dismiss"
+                      onClick={handleDismissResult}
+                    >
+                      <X className="size-3" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="p-3">
+                  <img
+                    src={resultImage.url}
+                    alt={resultImage.hld?.slice(0, 100) ?? "Generated image"}
+                    className="w-full rounded-lg object-contain bg-muted/30"
+                  />
+                  {resultImage.hld && (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground leading-relaxed">
+                      {resultImage.hld}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>

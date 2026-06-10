@@ -35,7 +35,8 @@ def init_db(db_path: str | None = None, output_dir: str | None = None):
             height      INTEGER NOT NULL DEFAULT 1024,
             preset      TEXT NOT NULL DEFAULT 'V4_QUALITY_48',
             seed        INTEGER NOT NULL DEFAULT 0,
-            file_path   TEXT NOT NULL
+            file_path   TEXT NOT NULL,
+            prompt_id   INTEGER
         );
 
         CREATE TABLE IF NOT EXISTS prompts (
@@ -50,15 +51,19 @@ def init_db(db_path: str | None = None, output_dir: str | None = None):
             form_json   TEXT NOT NULL
         );
     """)
+    try:
+        conn.execute("ALTER TABLE images ADD COLUMN prompt_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
 
-def add_image(hld: str, width: int, height: int, preset: str, seed: int, file_path: str) -> int:
+def add_image(hld: str, width: int, height: int, preset: str, seed: int, file_path: str, prompt_id: int | None = None) -> int:
     conn = _conn()
     cur = conn.execute(
-        "INSERT INTO images (hld, width, height, preset, seed, file_path) VALUES (?,?,?,?,?,?)",
-        (hld, width, height, preset, seed, file_path),
+        "INSERT INTO images (hld, width, height, preset, seed, file_path, prompt_id) VALUES (?,?,?,?,?,?,?)",
+        (hld, width, height, preset, seed, file_path, prompt_id),
     )
     conn.commit()
     image_id = cur.lastrowid
@@ -66,11 +71,16 @@ def add_image(hld: str, width: int, height: int, preset: str, seed: int, file_pa
     return image_id
 
 
-def get_images(limit: int = 50) -> list[dict]:
+def get_images(limit: int = 50, prompt_id: int | None = None) -> list[dict]:
     conn = _conn()
-    rows = conn.execute(
-        "SELECT * FROM images ORDER BY created_at DESC LIMIT ?", (limit,)
-    ).fetchall()
+    if prompt_id is not None:
+        rows = conn.execute(
+            "SELECT * FROM images WHERE prompt_id = ? ORDER BY created_at DESC LIMIT ?", (prompt_id, limit)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM images ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
