@@ -52,7 +52,7 @@ export function PromptHistory({ sidebar }: PromptHistoryProps) {
       }
     }
     if (sidebar) {
-      navigate({ to: "/" });
+      navigate({ to: "/history/$promptId", params: { promptId: String(_id) } });
     }
   }, [dispatch, sidebar, navigate]);
 
