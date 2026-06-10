@@ -112,28 +112,10 @@ export function Composition() {
                     />
                   </div>
                 )}
-                {el.type === "obj" && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Description</Label>
-                    <Input
-                      className="h-9 text-xs"
-                      placeholder="Brief name for this object…"
-                      value={el.desc.slice(0, 60)}
-                      onChange={(e) =>
-                        dispatch({
-                          type: "UPDATE_ELEMENT",
-                          index: i,
-                          field: "desc",
-                          value: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                )}
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs">Full Description</Label>
+                <Label className="text-xs">{el.type === "obj" ? "Description" : "Full Description"}</Label>
                 <Textarea
                   className="min-h-[50px] resize-y text-xs"
                   placeholder="Describe this element in detail…"
