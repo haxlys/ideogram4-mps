@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAppState } from "@/state/context";
-import { loadImages } from "@/state/storage";
+import { invalidateImageCache, loadImages } from "@/state/storage";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,7 @@ export function ResultGallery() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    invalidateImageCache();
     loadImages().then((saved) => {
       dispatch({ type: "SET_IMAGES", entries: saved });
     });

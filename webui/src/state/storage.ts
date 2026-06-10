@@ -12,6 +12,10 @@ const LAST_FORM_KEY = "ideogram4_last_form";
 let _imagesCache: ImageEntry[] | null = null;
 let _promptsCache: PromptEntry[] | null = null;
 
+export function invalidateImageCache() {
+  _imagesCache = null;
+}
+
 export function loadLastForm(): FormState {
   try {
     const raw = localStorage.getItem(LAST_FORM_KEY);

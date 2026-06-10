@@ -132,8 +132,20 @@ def get_prompts(limit: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_prompt(prompt_id: int) -> dict | None:
+    conn = _conn()
+    row = conn.execute("SELECT * FROM prompts WHERE id = ?", (prompt_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def delete_prompt(prompt_id: int) -> bool:
     conn = _conn()
+    rows = conn.execute("SELECT file_path FROM images WHERE prompt_id = ?", (prompt_id,)).fetchall()
+    for r in rows:
+        if os.path.exists(r["file_path"]):
+            os.remove(r["file_path"])
+    conn.execute("DELETE FROM images WHERE prompt_id = ?", (prompt_id,))
     conn.execute("DELETE FROM prompts WHERE id = ?", (prompt_id,))
     conn.commit()
     affected = conn.total_changes
