@@ -66,16 +66,23 @@
   }
 }
 
+.masonry-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-auto-flow: row dense;
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.masonry-gallery > * {
+  /* item 내부에서 이미지가 자연 비율 유지, item 자체는 stretch 방지 */
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+}
+
 @supports (grid-template-rows: masonry) {
   .masonry-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     grid-template-rows: masonry;
-    gap: 0.75rem;
-    columns: unset !important;
-  }
-
-  .masonry-gallery > * {
-    margin-bottom: 0 !important;
   }
 }

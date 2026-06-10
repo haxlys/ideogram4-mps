@@ -27,21 +27,18 @@ export function ResultGallery() {
 
   return (
     <>
-      <div
-        className="masonry-gallery"
-        style={{ columnWidth: "280px", columnGap: "0.75rem" }}
-      >
+      <div className="masonry-gallery">
         {state.images.map((img) => (
           <button
             key={img.id}
             type="button"
-            className="relative overflow-hidden rounded-lg border border-border bg-muted transition-opacity hover:opacity-80 w-full break-inside-avoid mb-3"
+            className="relative overflow-hidden rounded-lg border border-border bg-muted transition-opacity hover:opacity-80 w-full"
             onClick={() => setPreviewUrl(img.url)}
           >
             <img
               src={img.url}
               alt={img.hld?.slice(0, 60) ?? ""}
-              className="w-full h-auto object-cover"
+              className="w-full h-auto"
               loading="lazy"
             />
             <div className="absolute bottom-0 left-0 right-0 truncate bg-black/60 px-2 py-1 text-[11px] text-white">
