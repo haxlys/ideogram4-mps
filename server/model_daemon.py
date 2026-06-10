@@ -233,3 +233,110 @@ def handle_unload():
 
 def handle_status():
     return {"state": _state, "msg": _state_msg}
+
+
+# ── LoRA ─────────────────────────────────────────────────────────
+
+_lora_applied: str | None = None
+_lora_strength: float = 0.6
+_original_states: dict | None = None
+
+LORA_DIR = Path(os.environ.get("IDEOGRAM4_LORA_DIR", Path(__file__).resolve().parent.parent / "models" / "loras"))
+
+
+def _detect_lora_format(lora_path: str) -> str:
+    sd = sf.load_file(lora_path)
+    for key in sd.keys():
+        if "lokr_w1" in key:
+            return "lokr"
+        if "lora_A" in key:
+            return "standard"
+    raise ValueError(f"Unknown LoRA format in {lora_path}")
+
+
+def list_loras() -> list[dict]:
+    if not LORA_DIR.is_dir():
+        return []
+    result = []
+    for f in sorted(LORA_DIR.iterdir()):
+        if not f.suffix == ".safetensors":
+            continue
+        try:
+            fmt = _detect_lora_format(str(f))
+            size_mb = f.stat().st_size / (1024 * 1024)
+            result.append({"name": f.name, "path": str(f), "format": fmt, "size_mb": round(size_mb, 1)})
+        except Exception:
+            continue
+    return result
+
+
+def apply_lora(name: str, strength: float = 0.6) -> dict:
+    global _lora_applied, _lora_strength, _original_states
+
+    pipe = get_pipeline()
+    if pipe is None:
+        return {"ok": False, "msg": "Model not loaded."}
+
+    lora_path = LORA_DIR / name
+    if not lora_path.is_file():
+        return {"ok": False, "msg": f"LoRA not found: {name}"}
+
+    try:
+        fmt = _detect_lora_format(str(lora_path))
+    except ValueError as e:
+        return {"ok": False, "msg": str(e)}
+
+    import importlib
+    apply_mod = importlib.import_module("apply_lora")
+
+    if _original_states is None:
+        _original_states = {
+            "cond": {k: v.clone() for k, v in pipe.conditional_transformer.state_dict().items()},
+            "uncond": {k: v.clone() for k, v in pipe.unconditional_transformer.state_dict().items()},
+        }
+
+    if fmt == "lokr":
+        sd = pipe.conditional_transformer.state_dict()
+        apply_mod.apply_lokr_lora(sd, str(lora_path), strength=strength)
+        pipe.conditional_transformer.load_state_dict(sd, strict=False)
+        sd2 = pipe.unconditional_transformer.state_dict()
+        apply_mod.apply_lokr_lora(sd2, str(lora_path), strength=strength)
+        pipe.unconditional_transformer.load_state_dict(sd2, strict=False)
+    else:
+        sd = pipe.conditional_transformer.state_dict()
+        apply_mod.apply_std_lora(sd, str(lora_path), strength=strength)
+        pipe.conditional_transformer.load_state_dict(sd, strict=False)
+        sd2 = pipe.unconditional_transformer.state_dict()
+        apply_mod.apply_std_lora(sd2, str(lora_path), strength=strength)
+        pipe.unconditional_transformer.load_state_dict(sd2, strict=False)
+
+    _lora_applied = name
+    _lora_strength = strength
+    logger.info("LoRA applied: %s (format=%s, strength=%.2f)", name, fmt, strength)
+    return {"ok": True, "msg": f"LoRA {name} applied (strength={strength}, format={fmt})"}
+
+
+def remove_lora() -> dict:
+    global _lora_applied, _original_states
+
+    pipe = get_pipeline()
+    if pipe is None:
+        return {"ok": False, "msg": "Model not loaded."}
+    if _original_states is None:
+        return {"ok": False, "msg": "No LoRA applied."}
+
+    pipe.conditional_transformer.load_state_dict(_original_states["cond"], strict=False)
+    pipe.unconditional_transformer.load_state_dict(_original_states["uncond"], strict=False)
+
+    _original_states = None
+    _lora_applied = None
+    logger.info("LoRA removed, original weights restored")
+    return {"ok": True, "msg": "LoRA removed, original weights restored."}
+
+
+def get_lora_status() -> dict:
+    return {
+        "applied": _lora_applied,
+        "strength": _lora_strength,
+        "available": list_loras(),
+    }
