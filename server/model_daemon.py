@@ -147,6 +147,23 @@ def _load_pipeline(snapshot: Path, device) -> Ideogram4Pipeline:
         dtype=torch.bfloat16,
     )
     logger.info("Pipeline loaded in %.1fs", time.time() - t0)
+
+    logger.info("Warming up MPSGraph kernels...")
+    with torch.inference_mode():
+        pipe(
+            prompts='{"high_level_description":"warmup"}',
+            height=64,
+            width=64,
+            num_steps=2,
+            guidance_schedule=[1, 1],
+            mu=0.0,
+            std=1.5,
+            seed=0,
+            raise_on_caption_issues=False,
+        )
+    torch.mps.empty_cache()
+    logger.info("  warmup done")
+
     return pipe
 
 

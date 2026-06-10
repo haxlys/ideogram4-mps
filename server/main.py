@@ -11,6 +11,8 @@ import time
 import uuid
 from io import BytesIO
 
+import torch
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -163,17 +165,18 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
 
         pipe.unconditional_transformer.forward = _patched_forward
         try:
-            images = pipe(
-                prompts=prompt_str,
-                height=height,
-                width=width,
-                num_steps=total_steps,
-                guidance_schedule=preset_cfg.guidance_schedule,
-                mu=preset_cfg.mu,
-                std=preset_cfg.std,
-                seed=seed,
-                raise_on_caption_issues=False,
-            )
+            with torch.inference_mode():
+                images = pipe(
+                    prompts=prompt_str,
+                    height=height,
+                    width=width,
+                    num_steps=total_steps,
+                    guidance_schedule=preset_cfg.guidance_schedule,
+                    mu=preset_cfg.mu,
+                    std=preset_cfg.std,
+                    seed=seed,
+                    raise_on_caption_issues=False,
+                )
         finally:
             pipe.unconditional_transformer.forward = _orig_forward
 
