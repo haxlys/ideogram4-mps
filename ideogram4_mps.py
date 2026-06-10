@@ -270,6 +270,22 @@ def main():
 
     pipe = load_pipeline(snapshot, device)
 
+    logger.info("Warming up MPSGraph kernels...")
+    with torch.inference_mode():
+        pipe(
+            prompts=prompt,
+            height=64,
+            width=64,
+            num_steps=2,
+            guidance_schedule=[1, 1],
+            mu=0.0,
+            std=1.5,
+            seed=args.seed,
+            raise_on_caption_issues=False,
+        )
+    torch.mps.empty_cache()
+    logger.info("  warmup done")
+
     from ideogram4.sampler_configs import PRESETS
 
     preset = PRESETS[args.preset]
@@ -292,17 +308,18 @@ def main():
     logger.info("Resolution: %dx%d  |  Seed: %d", w, h, args.seed)
 
     t0 = time.time()
-    images = pipe(
-        prompts=prompt,
-        height=h,
-        width=w,
-        num_steps=preset.num_steps,
-        guidance_schedule=preset.guidance_schedule,
-        mu=preset.mu,
-        std=preset.std,
-        seed=args.seed,
-        raise_on_caption_issues=False,
-    )
+    with torch.inference_mode():
+        images = pipe(
+            prompts=prompt,
+            height=h,
+            width=w,
+            num_steps=preset.num_steps,
+            guidance_schedule=preset.guidance_schedule,
+            mu=preset.mu,
+            std=preset.std,
+            seed=args.seed,
+            raise_on_caption_issues=False,
+        )
     gen_s = time.time() - t0
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
