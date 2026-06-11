@@ -58,6 +58,34 @@ Then open http://localhost:5173.
 > directly from the [official GitHub repo](https://github.com/ideogram-oss/ideogram4).
 > `huggingface-cli login` is deprecated — use `hf auth login` instead.
 
+## Model download
+
+The model weights (~26 GB, FP8 safetensors) are **not** included in this repo.
+They are downloaded automatically from HuggingFace on first pipeline load — you
+don't need to run a separate download command. Weights are cached to
+`~/.cache/huggingface/hub/`.
+
+To pre-download without running inference:
+
+```bash
+source .venv/bin/activate
+hf download ideogram-ai/ideogram-4-fp8
+```
+
+> The download above is optional. The model auto-downloads on first load either way.
+
+### Prerequisites
+
+1. **License**: Accept the terms at
+   [https://huggingface.co/ideogram-ai/ideogram-4-fp8](https://huggingface.co/ideogram-ai/ideogram-4-fp8)
+   (**"Agree and access repository"** button).
+
+2. **Token permissions**: If using a **fine-grained** token, you must enable
+   **"Read access to contents of all public gated repos you can access"** in
+   [your token settings](https://huggingface.co/settings/tokens). The simplest
+   option is to create a **Read**-scoped token (not fine-grained) and use it with
+   `hf auth login`.
+
 ## Architecture
 
 ```
@@ -185,15 +213,73 @@ Full format reference: https://github.com/ideogram-oss/ideogram4/blob/main/docs/
 
 ## Memory & speed
 
-1024×1024, V4_QUALITY_48 on an Apple M5 Max with 128 GB unified memory:
+Common baseline (V4_QUALITY_48):
 
 - **Disk**: ~26 GB model weights (FP8 safetensors)
-- **Pipeline load**: ~140 s (Qwen3-VL 8B text encoder → MPS transfer is the bottleneck)
-- **Generation**: ~402 s
-- **Peak memory**: ~50 GB (bf16 model weights + activations)
 - **Total model params**: ~26.8B (2× 9.3B transformers + 8B text encoder + VAE)
+- **Peak memory (M5 Max, no swap)**: ~50 GB
+- **Peak memory (M1 Max 64 GB, heavy swap)**: 63–68 GB
 
-Smaller presets and resolutions reduce both time and memory proportionally.
+### M5 Max (128 GB unified memory)
+
+| Resolution | Load | Generation | Peak MPS mem |
+|:----------:|:----:|:----------:|:-----------:|
+| 1024×1024 | ~140 s | ~408 s | ~50 GB |
+
+### M1 Max (64 GB unified memory)
+
+| Resolution | Load | Generation | Peak MPS mem |
+|:----------:|:----:|:----------:|:-----------:|
+| 1024×1024 | 315 s | 2240 s | 68.4 GB |
+| 512×512 | — | 818 s | 63.7 GB |
+
+### Pipeline load breakdown (M1 Max, 1024×1024)
+
+| Step | Time |
+|------|:----:|
+| Text encoder (CPU dequant → MPS) | 128 s |
+| Transformer (9.3B) | 84 s |
+| Unconditional transformer (9.3B) | 84 s |
+| VAE | 19 s |
+| MPSGraph warmup (first inference) | 88 s |
+| **Pipeline load total** | **315 s** |
+
+### Cross-chip comparison
+
+All at V4_QUALITY_48, same caption prompt. Ratios are consistent across
+resolutions — generation slowdown is fixed per-step, not pixel-dependent.
+
+| Metric | M5 Max (128 GB) | M1 Max (64 GB) | Ratio (M1/M5) |
+|--------|:---------------:|:--------------:|:-------------:|
+| Pipeline load | ~140 s | 315 s | **2.2×** |
+| Generation 1024² | 408 s | 2240 s | **5.5×** |
+| Generation 512² | ~149 s* | 818 s | **5.5×** |
+| Peak memory 1024² | ~50 GB | 68.4 GB | swap |
+| Peak memory 512² | — | 63.7 GB | swap |
+
+\* 512² on M5 Max is estimated (408 / 2.74 scaling based on M1 resolution ratio).
+
+### Analysis
+
+- **Pipeline load** is 2.2× slower on M1 Max — dominated by CPU dequant + MPS
+  transfer (text encoder 8B), not GPU compute.
+- **Generation** is consistently **~5.5× slower** regardless of resolution
+  (512² and 1024² show the same ratio). This reflects the combined effect of
+  lower MPS compute throughput, narrower memory bandwidth, and swap pressure
+  on the 64 GB machine.
+- On M1 Max 64 GB, **even 512×512 exceeds physical RAM** (63.7 GB peak).
+  Swap is unavoidable at any resolution with V4_QUALITY_48.
+
+### Recommendations for M1 Max 64 GB
+
+| Goal | Suggested config | Est. time |
+|:----|:----------------|:---------:|
+| Best quality without swap | 768×768 + V4_DEFAULT_20 | ~300–400 s |
+| Fast generation | 512×512 + V4_TURBO_12 | ~200–300 s |
+| Maximum quality (accept swap) | 1024×1024 + V4_QUALITY_48 | ~2240 s |
+
+Upgrading to **96 GB+ unified memory** eliminates swap entirely and brings
+generation time closer to the ~2-3× chip-gap ratio.
 
 ## Logging
 
