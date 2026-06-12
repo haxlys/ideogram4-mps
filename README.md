@@ -226,25 +226,22 @@ Common baseline (V4_QUALITY_48):
 
 | Resolution | Load | Generation | Peak MPS mem |
 |:----------:|:----:|:----------:|:-----------:|
-| 1024×1024 | ~140 s | ~408 s | ~50 GB |
+| 1024×1024 | ~197 s | ~408 s | ~50 GB |
+
+### Pipeline load breakdown
+
+All times from `bench_load.py` run on each machine. M5 Max numbers are with `PYTORCH_MPS_FAST_MATH=1`.
+
+| Step | M5 Max (128 GB) | M1 Max (64 GB) |
+|------|:---:|:---:|
+| Text encoder (CPU dequant → MPS) | 77 s | 128 s |
+| Conditional transformer (9.3B) | 74 s | 84 s |
+| Unconditional transformer (9.3B) | 38 s | 84 s |
+| VAE | 2 s | 19 s |
+| MPSGraph warmup (first inference) | 5 s | 88 s |
+| **Pipeline load total** | **197 s** | **315 s** |
 
 ### M1 Max (64 GB unified memory)
-
-| Resolution | Load | Generation | Peak MPS mem |
-|:----------:|:----:|:----------:|:-----------:|
-| 1024×1024 | 315 s | 2240 s | 68.4 GB |
-| 512×512 | — | 818 s | 63.7 GB |
-
-### Pipeline load breakdown (M1 Max, 1024×1024)
-
-| Step | Time |
-|------|:----:|
-| Text encoder (CPU dequant → MPS) | 128 s |
-| Transformer (9.3B) | 84 s |
-| Unconditional transformer (9.3B) | 84 s |
-| VAE | 19 s |
-| MPSGraph warmup (first inference) | 88 s |
-| **Pipeline load total** | **315 s** |
 
 ### Cross-chip comparison
 
@@ -253,7 +250,7 @@ resolutions — generation slowdown is fixed per-step, not pixel-dependent.
 
 | Metric | M5 Max (128 GB) | M1 Max (64 GB) | Ratio (M1/M5) |
 |--------|:---------------:|:--------------:|:-------------:|
-| Pipeline load | ~140 s | 315 s | **2.2×** |
+| Pipeline load | 197 s | 315 s | **1.6×** |
 | Generation 1024² | 408 s | 2240 s | **5.5×** |
 | Generation 512² | ~149 s* | 818 s | **5.5×** |
 | Peak memory 1024² | ~50 GB | 68.4 GB | swap |
@@ -263,7 +260,7 @@ resolutions — generation slowdown is fixed per-step, not pixel-dependent.
 
 ### Analysis
 
-- **Pipeline load** is 2.2× slower on M1 Max — dominated by CPU dequant + MPS
+- **Pipeline load** is 1.6× slower on M1 Max — dominated by CPU dequant + MPS
   transfer (text encoder 8B), not GPU compute.
 - **Generation** is consistently **~5.5× slower** regardless of resolution
   (512² and 1024² show the same ratio). This reflects the combined effect of
