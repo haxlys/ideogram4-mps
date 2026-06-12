@@ -54,6 +54,11 @@ cd webui && pnpm lint            # ESLint
 - **`PYTORCH_ENABLE_MPS_FALLBACK=1`** is set automatically in both
   `ideogram4_mps.py` and `model_daemon.py`. Required for `ndtri` op (MPS
   doesn't support it). Never override.
+- **`PYTORCH_MPS_FAST_MATH=1`** is set automatically in both
+  `ideogram4_mps.py` and `model_daemon.py`. Enables MPS fast math kernels.
+  Small resolution generation shows ~40% speedup on M4 Pro; large resolution
+  marginal gain. Override with `PYTORCH_MPS_FAST_MATH=0` if numerical issues
+  are suspected.
 - **Apple Silicon only.** M1+ required. ~50 GB unified memory for 1024×1024
   V4_QUALITY_48. No CUDA/NVIDIA support.
 - **Generation uses `threading.Thread`**, not `asyncio`. The pipeline runs on
@@ -121,8 +126,9 @@ export IDEOGRAM4_LORA_DIR="/path/to/models/loras"  # default: models/loras/
 ### Known issue: MPSGraph recompile overhead
 
 Merging LoRA changes weights→triggers MPSGraph JIT recompile on next inference.
-First generation after apply/remove may be measurably slower. Subsequent
-generations run at native speed.
+Mitigated by running a small warmup inference immediately after `apply_lora()`
+and `remove_lora()` via `_warmup_pipeline()`. The warmup cost is now paid at
+apply/remove time rather than on the first user generation.
 
 ## Unused dependencies (do not add code that relies on these)
 

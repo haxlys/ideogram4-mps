@@ -208,12 +208,22 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
         _tasks[task_id]["progress"] = 100
         _tasks[task_id]["msg"] = f"Done in {gen_s:.1f}s"
 
-        mem_mps = torch.mps.driver_allocated_memory() if torch.backends.mps.is_available() else 0
-        mem_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        logger.info("Task %s done in %.1fs  |  MPS: %.1f GB  |  RSS: %.1f GB",
-                     task_id, gen_s,
-                     mem_mps / (1024**3),
-                     mem_rss / (1024**2))
+        if torch.backends.mps.is_available():
+            mem_drv = torch.mps.driver_allocated_memory()
+            mem_cur = torch.mps.current_allocated_memory()
+            mem_max = torch.mps.recommended_max_memory()
+            mem_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            logger.info("Task %s done in %.1fs  |  MPS cur:%.1fG drv:%.1fG max:%.1fG  |  RSS: %.1fG",
+                         task_id, gen_s,
+                         mem_cur / (1024**3),
+                         mem_drv / (1024**3),
+                         mem_max / (1024**3) if mem_max else 0,
+                         mem_rss / (1024**2))
+        else:
+            mem_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            logger.info("Task %s done in %.1fs  |  RSS: %.1fG",
+                         task_id, gen_s,
+                         mem_rss / (1024**2))
 
         buf = BytesIO()
         save_kw = {}

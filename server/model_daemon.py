@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+os.environ.setdefault("PYTORCH_MPS_FAST_MATH", "1")
 
 from logger import get_logger
 
@@ -148,7 +149,14 @@ def _load_pipeline(snapshot: Path, device) -> Ideogram4Pipeline:
     )
     logger.info("Pipeline loaded in %.1fs", time.time() - t0)
 
+    _warmup_pipeline(pipe)
+
+    return pipe
+
+
+def _warmup_pipeline(pipe: Ideogram4Pipeline):
     logger.info("Warming up MPSGraph kernels...")
+    t0 = time.time()
     with torch.inference_mode():
         pipe(
             prompts='{"high_level_description":"warmup"}',
@@ -162,9 +170,7 @@ def _load_pipeline(snapshot: Path, device) -> Ideogram4Pipeline:
             raise_on_caption_issues=False,
         )
     torch.mps.empty_cache()
-    logger.info("  warmup done")
-
-    return pipe
+    logger.info("  warmup done in %.1fs", time.time() - t0)
 
 
 # ── public API ──────────────────────────────────────────────────
@@ -313,6 +319,7 @@ def apply_lora(name: str, strength: float = 0.6) -> dict:
     _lora_applied = name
     _lora_strength = strength
     logger.info("LoRA applied: %s (format=%s, strength=%.2f)", name, fmt, strength)
+    _warmup_pipeline(pipe)
     return {"ok": True, "msg": f"LoRA {name} applied (strength={strength}, format={fmt})"}
 
 
@@ -331,6 +338,7 @@ def remove_lora() -> dict:
     _original_states = None
     _lora_applied = None
     logger.info("LoRA removed, original weights restored")
+    _warmup_pipeline(pipe)
     return {"ok": True, "msg": "LoRA removed, original weights restored."}
 
 

@@ -307,11 +307,13 @@ The `.log` suffix from generation metadata (`examples/result.log`) is kept in gi
 | `IDEOGRAM4_LORA_DIR` | `models/loras/` | Directory for `.safetensors` LoRA weights |
 | `IDEOGRAM4_LOG_DIR` | `logs/` | Override log directory |
 | `PYTORCH_ENABLE_MPS_FALLBACK` | `1` (set automatically) | Required for `ndtri` op |
+| `PYTORCH_MPS_FAST_MATH` | `1` (set automatically) | Enables MPS fast math kernels. Override with `0` if numerical issues |
 
 - Apple Silicon Mac (M1/M2/M3/M4/M5)
 - Python 3.11+ with pip
 - Node.js 20+ with pnpm
 - `PYTORCH_ENABLE_MPS_FALLBACK=1` (set automatically)
+- `PYTORCH_MPS_FAST_MATH=1` (set automatically)
 - ~50 GB unified memory for 1024×1024 V4_QUALITY_48 (smaller resolutions / presets may work with less)
 - ~26 GB free disk space for FP8 model weights
 - HuggingFace account with access to the gated repo `ideogram-ai/ideogram-4-fp8`
