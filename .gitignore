@@ -38,5 +38,8 @@ huggingface_cache/
 # LoRA weights
 models/
 
+# Environment
+.env
+
 # Worktrees
 .worktrees/

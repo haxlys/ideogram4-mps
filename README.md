@@ -47,10 +47,14 @@ pip install -r server/requirements.txt
 # 2. Install Node deps
 cd webui && pnpm install && cd ..
 
-# 3. Log in to HuggingFace
+# 3. Configure Quick Prompt (optional but recommended)
+cp .env.example .env
+# Edit .env: set IDEOGRAM4_MAGIC_PROMPT_API_KEY
+
+# 4. Log in to HuggingFace
 hf auth login
 
-# 4. Launch daemon + server + webui
+# 5. Launch
 ./run.sh
 ```
 
@@ -108,6 +112,8 @@ FastAPI Server (server/main.py, port 8000)
     │
     ├── magic_prompt.py    ← POST /api/magic-prompt → commandcode.ai
     │
+    ├── config.py          ← env var config (paths, ports, defaults)
+    │
     ├── db.py              ← SQLite (images, prompts, form state)
     │
     └── logger.py          ← structured logs → logs/
@@ -123,14 +129,17 @@ FastAPI Server (server/main.py, port 8000)
 ### Startup flow (`./run.sh`)
 
 1. Installs Python + Node dependencies
-2. Kills any existing processes on ports 8000 / 5173
-3. Starts server (port 8000) and webui (port 5173) in parallel
-4. Cleans up all processes on SIGINT / SIGTERM / EXIT
+2. Loads `.env` from project root (if present)
+3. Kills any existing processes on ports 8000 / 5173
+4. Starts server (port 8000) and webui (port 5173) in parallel
+5. Cleans up all processes on SIGINT / SIGTERM / EXIT
 
 ### Manual startup (for debugging)
 
 ```bash
+# Load env vars, then:
 # Terminal 1: API Server
+set -a && source .env && set +a
 python server/main.py
 
 # Terminal 2: WebUI
@@ -295,16 +304,37 @@ Logs include timestamps, severity level, and structured messages. Set
 The `.log` suffix from generation metadata (`examples/result.log`) is kept in git via
 `.gitignore` exclusion while runtime logs are ignored.
 
-## Environment variables
+## Configuration
+
+All settings are read from environment variables at import time by `server/config.py`.
+`run.sh` auto-loads `.env` from the project root. See `.env.example` for all options.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | Required for Quick Prompt (commandcode.ai API key) |
-| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `MiniMaxAI/MiniMax-M3` | LLM model for magic prompt |
-| `IDEOGRAM4_LORA_DIR` | `models/loras/` | Directory for `.safetensors` LoRA weights |
-| `IDEOGRAM4_LOG_DIR` | `logs/` | Override log directory |
-| `PYTORCH_ENABLE_MPS_FALLBACK` | `1` (set automatically) | Required for `ndtri` op |
-| `PYTORCH_MPS_FAST_MATH` | `1` (set automatically) | Enables MPS fast math kernels. Override with `0` if numerical issues |
+| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (required) |
+| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `MiniMaxAI/MiniMax-M3` | LLM model for prompt expansion |
+| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `https://api.commandcode.ai/provider/v1` | LLM provider base URL |
+| `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
+| `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
+| `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |
+| `IDEOGRAM4_SERVER_HOST` | `0.0.0.0` | FastAPI bind host |
+| `IDEOGRAM4_SERVER_PORT` | `8000` | FastAPI listen port |
+| `IDEOGRAM4_SERVER_LOG_LEVEL` | `info` | Uvicorn log level |
+| `IDEOGRAM4_CORS_ORIGINS` | `*` | CORS allow-origins |
+| `IDEOGRAM4_MODEL_REPO` | `ideogram-ai/ideogram-4-fp8` | HuggingFace model repo |
+| `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default generation preset |
+| `IDEOGRAM4_DEFAULT_FORMAT` | `webp` | Default output format (server) |
+| `IDEOGRAM4_DEFAULT_SEED` | `20260608` | Default generation seed |
+| `IDEOGRAM4_IMAGE_QUALITY_WEBP` | `90` | WebP lossy quality |
+| `IDEOGRAM4_IMAGE_QUALITY_JPEG` | `95` | JPEG lossy quality |
+| `IDEOGRAM4_LOG_DIR` | `logs/` | Log output directory |
+| `IDEOGRAM4_DB_PATH` | `server/data/ideogram4.db` | SQLite database path |
+| `IDEOGRAM4_OUTPUT_DIR` | `server/output/` | Generated image output dir |
+| `IDEOGRAM4_LORA_DIR` | `models/loras/` | LoRA weight files dir |
+| `IDEOGRAM4_LORA_STRENGTH` | `0.6` | Default LoRA merge strength |
+| `IDEOGRAM4_WARMUP_SIZE` | `64` | Warmup resolution (width=height) |
+| `IDEOGRAM4_WARMUP_STEPS` | `2` | Warmup step count |
+| `IDEOGRAM4_DB_QUERY_LIMIT` | `50` | Default row limit for DB queries |
 
 - Apple Silicon Mac (M1/M2/M3/M4/M5)
 - Python 3.11+ with pip

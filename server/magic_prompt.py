@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import requests
 
 from ideogram4.magic_prompt import (
@@ -12,20 +11,19 @@ from ideogram4.magic_prompt import (
     aspect_ratio_from_size,
 )
 
+from config import (
+    MAGIC_PROMPT_API_KEY,
+    MAGIC_PROMPT_MODEL,
+    MAGIC_PROMPT_BASE_URL,
+    MAGIC_PROMPT_TIMEOUT,
+    MAGIC_PROMPT_MAX_TOKENS,
+    MAGIC_PROMPT_TEMPERATURE,
+)
 
-BASE_URL = "https://api.commandcode.ai/provider/v1"
-DEFAULT_MODEL = "MiniMaxAI/MiniMax-M3"
 
-
-def _get_config():
-    api_key = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_API_KEY", "")
-    model = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MODEL", DEFAULT_MODEL)
-    return api_key, model
-
-
-def _chat_completion(messages: list[dict], model: str, api_key: str, timeout: float = 120.0) -> str:
+def _chat_completion(messages: list[dict], model: str, api_key: str) -> str:
     resp = requests.post(
-        f"{BASE_URL}/chat/completions",
+        f"{MAGIC_PROMPT_BASE_URL}/chat/completions",
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -33,10 +31,10 @@ def _chat_completion(messages: list[dict], model: str, api_key: str, timeout: fl
         json={
             "model": model,
             "messages": messages,
-            "max_tokens": 16384,
-            "temperature": 1.0,
+            "max_tokens": MAGIC_PROMPT_MAX_TOKENS,
+            "temperature": MAGIC_PROMPT_TEMPERATURE,
         },
-        timeout=timeout,
+        timeout=MAGIC_PROMPT_TIMEOUT,
     )
     resp.raise_for_status()
     data = resp.json()
@@ -117,7 +115,8 @@ def _build_augmented_messages(prompt: str, aspect_ratio: str) -> list[dict]:
 
 
 def expand_prompt(prompt: str, width: int, height: int, images_b64: list[str] | None = None) -> dict:
-    api_key, model = _get_config()
+    api_key = MAGIC_PROMPT_API_KEY
+    model = MAGIC_PROMPT_MODEL
     if not api_key:
         raise RuntimeError("IDEOGRAM4_MAGIC_PROMPT_API_KEY is not set")
 

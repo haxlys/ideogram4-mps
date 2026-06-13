@@ -5,6 +5,10 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 VENV_PYTHON="$ROOT/.venv/bin/python"
 PNPM="$(command -v pnpm)"
 
+if [ -f "$ROOT/.env" ]; then
+  export $(grep -v '^\s*#' "$ROOT/.env" | xargs)
+fi
+
 SERVER_PORT=8000
 WEBUI_PORT=5173
 

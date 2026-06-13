@@ -11,6 +11,9 @@
 - **Model management** (`server/model_daemon.py`) is a plain module with no HTTP
   server. Imported directly by `main.py`. Exposes `handle_load()`, `handle_unload()`,
   `handle_status()`, `get_pipeline()`.
+- **Configuration** (`server/config.py`) reads all settings from environment variables
+  at import time. `run.sh` auto-loads `.env` from project root. Single source of truth
+  for paths, ports, defaults, and tuning parameters.
 - **WebUI** (`webui/`) React + TypeScript + Vite. Proxies `/api/*` to `:8000` via
   `vite.config.ts`.
 
@@ -25,6 +28,7 @@ Cleans up on SIGINT/SIGTERM/EXIT.
 
 ### Manual (debugging — 2 terminals in this order)
 ```bash
+set -a && source .env && set +a  # load env vars
 python server/main.py            # terminal 1
 cd webui && pnpm dev             # terminal 2
 ```
@@ -80,14 +84,39 @@ Server module: `server/magic_prompt.py`. API: `POST /api/magic-prompt`.
 Uses `MiniMaxAI/MiniMax-M3` on commandcode.ai (OpenAI-compatible). Supports
 text-only and text+image (multi-image base64) input.
 
-### Environment variables
-
-```bash
-export IDEOGRAM4_MAGIC_PROMPT_API_KEY="user_..."   # required
-# IDEOGRAM4_MAGIC_PROMPT_MODEL="MiniMaxAI/MiniMax-M3"  # default
-```
-
 Failure modes surface as toast: "Failed to expand prompt: IDEOGRAM4_MAGIC_PROMPT_API_KEY is not set".
+
+## Configuration
+
+All settings are read from environment variables at import time by `server/config.py`.
+`run.sh` auto-loads `.env` from the project root. See `.env.example` for all options.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (required) |
+| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `MiniMaxAI/MiniMax-M3` | LLM model for prompt expansion |
+| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `https://api.commandcode.ai/provider/v1` | LLM provider base URL |
+| `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
+| `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
+| `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |
+| `IDEOGRAM4_SERVER_HOST` | `0.0.0.0` | FastAPI bind host |
+| `IDEOGRAM4_SERVER_PORT` | `8000` | FastAPI listen port |
+| `IDEOGRAM4_SERVER_LOG_LEVEL` | `info` | Uvicorn log level |
+| `IDEOGRAM4_CORS_ORIGINS` | `*` | CORS allow-origins |
+| `IDEOGRAM4_MODEL_REPO` | `ideogram-ai/ideogram-4-fp8` | HuggingFace model repo |
+| `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default generation preset |
+| `IDEOGRAM4_DEFAULT_FORMAT` | `webp` | Default output format (server) |
+| `IDEOGRAM4_DEFAULT_SEED` | `20260608` | Default generation seed |
+| `IDEOGRAM4_IMAGE_QUALITY_WEBP` | `90` | WebP lossy quality |
+| `IDEOGRAM4_IMAGE_QUALITY_JPEG` | `95` | JPEG lossy quality |
+| `IDEOGRAM4_LOG_DIR` | `logs/` | Log output directory |
+| `IDEOGRAM4_DB_PATH` | `server/data/ideogram4.db` | SQLite database path |
+| `IDEOGRAM4_OUTPUT_DIR` | `server/output/` | Generated image output dir |
+| `IDEOGRAM4_LORA_DIR` | `models/loras/` | LoRA weight files dir |
+| `IDEOGRAM4_LORA_STRENGTH` | `0.6` | Default LoRA merge strength |
+| `IDEOGRAM4_WARMUP_SIZE` | `64` | Warmup resolution (width=height) |
+| `IDEOGRAM4_WARMUP_STEPS` | `2` | Warmup step count |
+| `IDEOGRAM4_DB_QUERY_LIMIT` | `50` | Default row limit for DB queries |
 
 ## LoRA
 
@@ -115,12 +144,6 @@ at native speed. Original weights are backed up and restored on remove.
 
 ```bash
 python ideogram4_mps.py --lora models/loras/foo.safetensors --lora-strength 0.6 ...
-```
-
-### Environment
-
-```bash
-export IDEOGRAM4_LORA_DIR="/path/to/models/loras"  # default: models/loras/
 ```
 
 ### Known issue: MPSGraph recompile overhead

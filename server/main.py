@@ -18,6 +18,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from config import (
+    SERVER_HOST, SERVER_PORT, SERVER_LOG_LEVEL, CORS_ORIGINS,
+    DEFAULT_PRESET, DEFAULT_SERVER_FORMAT, DEFAULT_SEED,
+    IMAGE_QUALITY_WEBP, IMAGE_QUALITY_JPEG,
+    MAGIC_PROMPT_MODEL, DEFAULT_LORA_STRENGTH,
+)
 from db import init_db, get_images, delete_image, get_prompts, save_prompt, delete_prompt, get_last_form, save_last_form, add_image, OUTPUT_DIR, get_prompt
 from logger import get_logger, get_log_file
 from model_daemon import (
@@ -31,7 +37,7 @@ app = FastAPI(title="Ideogram 4 MPS Server")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[CORS_ORIGINS] if CORS_ORIGINS != "*" else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,7 +96,7 @@ def api_lora_status():
 @app.post("/api/lora/apply")
 def api_apply_lora(req: dict):
     name = req.get("name", "")
-    strength = float(req.get("strength", 0.6))
+    strength = float(req.get("strength", DEFAULT_LORA_STRENGTH))
     if not name:
         return {"ok": False, "msg": "Missing LoRA name."}
     return apply_lora(name, strength)
@@ -125,14 +131,16 @@ class MagicPromptRequest(BaseModel):
     images_b64: list[str] | None = None
 
 
+_MAGIC_MODEL = MAGIC_PROMPT_MODEL
+
+
 @app.post("/api/magic-prompt")
 def api_magic_prompt(req: MagicPromptRequest):
     logger.info("Magic prompt request: %dx%d", req.width, req.height)
     from magic_prompt import expand_prompt
     try:
         caption = expand_prompt(req.prompt, req.width, req.height, req.images_b64)
-        model = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MODEL", "MiniMaxAI/MiniMax-M3")
-        return {"caption": caption, "model": model}
+        return {"caption": caption, "model": _MAGIC_MODEL}
     except Exception as e:
         logger.error("Magic prompt failed: %s", str(e))
         from fastapi.responses import JSONResponse
@@ -145,9 +153,9 @@ class GenerateRequest(BaseModel):
     caption: dict
     width: int = 1024
     height: int = 1024
-    preset: str = "V4_QUALITY_48"
-    seed: int = 20260608
-    format: str = "webp"
+    preset: str = DEFAULT_PRESET
+    seed: int = DEFAULT_SEED
+    format: str = DEFAULT_SERVER_FORMAT
     prompt_id: int | None = None
 
 
@@ -228,7 +236,7 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
         buf = BytesIO()
         save_kw = {}
         if fmt in ("webp", "jpeg"):
-            save_kw["quality"] = 90 if fmt == "webp" else 95
+            save_kw["quality"] = IMAGE_QUALITY_WEBP if fmt == "webp" else IMAGE_QUALITY_JPEG
         PIL_fmt = fmt.upper()
         images[0].save(buf, format=PIL_fmt, **save_kw)
         buf.seek(0)
@@ -437,4 +445,4 @@ if __name__ == "__main__":
             ulog.handlers.clear()
             ulog.addHandler(uvicorn_fh)
             ulog.setLevel(logging.DEBUG)
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_level=SERVER_LOG_LEVEL)

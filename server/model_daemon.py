@@ -13,6 +13,10 @@ from pathlib import Path
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 os.environ.setdefault("PYTORCH_MPS_FAST_MATH", "1")
 
+from config import (
+    MODEL_REPO, MODEL_DEVICE, LORA_DIR, WARMUP_SIZE, WARMUP_STEPS,
+    DEFAULT_LORA_STRENGTH,
+)
 from logger import get_logger
 
 logger = get_logger("model")
@@ -29,7 +33,6 @@ from huggingface_hub import snapshot_download
 
 
 FP8_DTYPE = torch.float8_e4m3fn
-DEFAULT_REPO = "ideogram-ai/ideogram-4-fp8"
 
 _pipeline = None
 _device = None
@@ -143,7 +146,7 @@ def _load_pipeline(snapshot: Path, device) -> Ideogram4Pipeline:
         text_encoder=text_encoder,
         text_tokenizer=tokenizer,
         autoencoder=vae,
-        config=Ideogram4PipelineConfig(weights_repo=DEFAULT_REPO),
+        config=Ideogram4PipelineConfig(weights_repo=MODEL_REPO),
         device=device,
         dtype=torch.bfloat16,
     )
@@ -160,9 +163,9 @@ def _warmup_pipeline(pipe: Ideogram4Pipeline):
     with torch.inference_mode():
         pipe(
             prompts='{"high_level_description":"warmup"}',
-            height=64,
-            width=64,
-            num_steps=2,
+            height=WARMUP_SIZE,
+            width=WARMUP_SIZE,
+            num_steps=WARMUP_STEPS,
             guidance_schedule=[1, 1],
             mu=0.0,
             std=1.5,
@@ -196,8 +199,8 @@ def handle_load():
     logger.info("Model load requested")
 
     try:
-        device = torch.device("mps")
-        snapshot = _download_repo(DEFAULT_REPO)
+        device = torch.device(MODEL_DEVICE)
+        snapshot = _download_repo(MODEL_REPO)
 
         with _lock:
             _state_msg = "Loading pipeline (~140s)..."
@@ -244,10 +247,8 @@ def handle_status():
 # ── LoRA ─────────────────────────────────────────────────────────
 
 _lora_applied: str | None = None
-_lora_strength: float = 0.6
+_lora_strength: float = DEFAULT_LORA_STRENGTH
 _original_states: dict | None = None
-
-LORA_DIR = Path(os.environ.get("IDEOGRAM4_LORA_DIR", Path(__file__).resolve().parent.parent / "models" / "loras"))
 
 
 def _detect_lora_format(lora_path: str) -> str:
@@ -276,7 +277,7 @@ def list_loras() -> list[dict]:
     return result
 
 
-def apply_lora(name: str, strength: float = 0.6) -> dict:
+def apply_lora(name: str, strength: float = DEFAULT_LORA_STRENGTH) -> dict:
     global _lora_applied, _lora_strength, _original_states
 
     pipe = get_pipeline()

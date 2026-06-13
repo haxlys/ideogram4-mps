@@ -65,7 +65,6 @@ import torch
 import safetensors.torch as sf
 
 FP8_DTYPE = torch.float8_e4m3fn
-DEFAULT_REPO = "ideogram-ai/ideogram-4-fp8"
 
 
 def download_repo(repo_id: str) -> Path:
@@ -172,7 +171,8 @@ def patch_scheduler():
 
 
 def load_pipeline(snapshot: Path, device):
-    from ideogram4 import Ideogram4Pipeline, Ideogram4PipelineConfig
+    from server.config import MODEL_REPO, WARMUP_SIZE, WARMUP_STEPS, DEFAULT_LORA_STRENGTH, IMAGE_QUALITY_JPEG
+from ideogram4 import Ideogram4Pipeline, Ideogram4PipelineConfig
     from transformers import AutoTokenizer
 
     logger = _get_logger()
@@ -193,7 +193,7 @@ def load_pipeline(snapshot: Path, device):
         text_encoder=text_encoder,
         text_tokenizer=tokenizer,
         autoencoder=vae,
-        config=Ideogram4PipelineConfig(weights_repo="ideogram-ai/ideogram-4-fp8"),
+        config=Ideogram4PipelineConfig(weights_repo=MODEL_REPO),
         device=device,
         dtype=torch.bfloat16,
     )
@@ -212,8 +212,8 @@ def main():
     parser.add_argument(
         "--repo",
         type=str,
-        default=DEFAULT_REPO,
-        help=f"HuggingFace repo ID (default: {DEFAULT_REPO})",
+        default=MODEL_REPO,
+        help=f"HuggingFace repo ID (default: {MODEL_REPO})",
     )
     parser.add_argument(
         "--width",
@@ -250,7 +250,7 @@ def main():
     )
     parser.add_argument("--out", type=Path, required=True, help="Output image path")
     parser.add_argument("--lora", type=Path, default=None, help="LoRA safetensors path to apply")
-    parser.add_argument("--lora-strength", type=float, default=0.6, help="LoRA strength (default: 0.6)")
+    parser.add_argument("--lora-strength", type=float, default=DEFAULT_LORA_STRENGTH, help=f"LoRA strength (default: {DEFAULT_LORA_STRENGTH})")
     args = parser.parse_args()
     if args.seed is None:
         args.seed = random.randint(0, 2**32 - 1)
@@ -297,9 +297,9 @@ def main():
     with torch.inference_mode():
         pipe(
             prompts=prompt,
-            height=64,
-            width=64,
-            num_steps=2,
+            height=WARMUP_SIZE,
+            width=WARMUP_SIZE,
+            num_steps=WARMUP_STEPS,
             guidance_schedule=[1, 1],
             mu=0.0,
             std=1.5,
@@ -349,7 +349,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     save_kw = {}
     if args.format in ("webp", "jpeg"):
-        save_kw["quality"] = args.quality or 95
+        save_kw["quality"] = args.quality or IMAGE_QUALITY_JPEG
         if args.format == "webp":
             save_kw["lossless"] = args.quality is None
     images[0].save(out, format=args.format.upper(), **save_kw)

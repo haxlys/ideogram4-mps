@@ -4,10 +4,12 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 
-_default_db = Path(__file__).parent / "data" / "ideogram4.db"
-_default_output = Path(__file__).parent / "output"
-DB_PATH: Path = _default_db
-OUTPUT_DIR: Path = _default_output
+from config import DB_PATH as _CFG_DB_PATH
+from config import OUTPUT_DIR as _CFG_OUTPUT_DIR
+from config import DB_QUERY_LIMIT as _CFG_QUERY_LIMIT
+
+DB_PATH: Path = _CFG_DB_PATH
+OUTPUT_DIR: Path = _CFG_OUTPUT_DIR
 
 
 def _conn() -> sqlite3.Connection:
@@ -20,8 +22,10 @@ def _conn() -> sqlite3.Connection:
 
 def init_db(db_path: str | None = None, output_dir: str | None = None):
     global DB_PATH, OUTPUT_DIR
-    DB_PATH = Path(db_path or Path(__file__).parent / "data" / "ideogram4.db")
-    OUTPUT_DIR = Path(output_dir or Path(__file__).parent / "output")
+    if db_path:
+        DB_PATH = Path(db_path)
+    if output_dir:
+        OUTPUT_DIR = Path(output_dir)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -81,7 +85,7 @@ def add_image(hld: str, width: int, height: int, preset: str, seed: int, file_pa
     return image_id
 
 
-def get_images(limit: int = 50, prompt_id: int | None = None) -> list[dict]:
+def get_images(limit: int = _CFG_QUERY_LIMIT, prompt_id: int | None = None) -> list[dict]:
     conn = _conn()
     if prompt_id is not None:
         rows = conn.execute(
@@ -133,7 +137,7 @@ def save_prompt(hld: str, form_json: str) -> int:
     return pid
 
 
-def get_prompts(limit: int = 50) -> list[dict]:
+def get_prompts(limit: int = _CFG_QUERY_LIMIT) -> list[dict]:
     conn = _conn()
     rows = conn.execute(
         "SELECT * FROM prompts ORDER BY saved_at DESC LIMIT ?", (limit,)
