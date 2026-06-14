@@ -45,6 +45,7 @@ app.add_middleware(
 
 _tasks: dict = {}
 _lock = threading.Lock()
+_pipeline_ops_lock = threading.Lock()
 
 
 @app.on_event("startup")
@@ -83,7 +84,8 @@ def api_load_model():
 
 @app.post("/api/model/unload")
 def api_unload_model():
-    return handle_unload()
+    with _pipeline_ops_lock:
+        return handle_unload()
 
 
 # ── LoRA endpoints ───────────────────────────────────────────────
@@ -99,12 +101,14 @@ def api_apply_lora(req: dict):
     strength = float(req.get("strength", DEFAULT_LORA_STRENGTH))
     if not name:
         return {"ok": False, "msg": "Missing LoRA name."}
-    return apply_lora(name, strength)
+    with _pipeline_ops_lock:
+        return apply_lora(name, strength)
 
 
 @app.post("/api/lora/remove")
 def api_remove_lora():
-    return remove_lora()
+    with _pipeline_ops_lock:
+        return remove_lora()
 
 
 # ── Validation / Magic prompt ─────────────────────────────────────
@@ -165,10 +169,6 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
     try:
         _tasks[task_id]["msg"] = "Encoding prompt..."
 
-        pipe = get_pipeline()
-        if pipe is None:
-            raise RuntimeError("Model not loaded.")
-
         prompt_str = json.dumps(caption, ensure_ascii=False)
         preset_cfg = PRESETS.get(preset, PRESETS["V4_QUALITY_48"])
 
@@ -182,83 +182,91 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
         _tasks[task_id]["progress"] = 0
         _tasks[task_id]["total_steps"] = total_steps
 
-        t0 = time.time()
+        if _pipeline_ops_lock.locked():
+            _tasks[task_id]["msg"] = "Waiting for current model operation..."
 
-        step_count = [0]
-        _orig_forward = pipe.unconditional_transformer.forward
+        with _pipeline_ops_lock:
+            pipe = get_pipeline()
+            if pipe is None:
+                raise RuntimeError("Model not loaded.")
 
-        def _patched_forward(*args, **kwargs):
-            result = _orig_forward(*args, **kwargs)
-            step_count[0] += 1
-            pct = min(int(step_count[0] / total_steps * 100), 99)
-            _tasks[task_id]["progress"] = pct
-            _tasks[task_id]["msg"] = f"Generating ({width}x{height}, {step_count[0]}/{total_steps} steps)..."
-            return result
+            t0 = time.time()
 
-        pipe.unconditional_transformer.forward = _patched_forward
-        try:
-            with torch.inference_mode():
-                images = pipe(
-                    prompts=prompt_str,
-                    height=height,
-                    width=width,
-                    num_steps=total_steps,
-                    guidance_schedule=preset_cfg.guidance_schedule,
-                    mu=preset_cfg.mu,
-                    std=preset_cfg.std,
-                    seed=seed,
-                    raise_on_caption_issues=False,
-                )
-        finally:
-            pipe.unconditional_transformer.forward = _orig_forward
+            step_count = [0]
+            _orig_forward = pipe.unconditional_transformer.forward
 
-        gen_s = time.time() - t0
-        _tasks[task_id]["progress"] = 100
-        _tasks[task_id]["msg"] = f"Done in {gen_s:.1f}s"
+            def _patched_forward(*args, **kwargs):
+                result = _orig_forward(*args, **kwargs)
+                step_count[0] += 1
+                pct = min(int(step_count[0] / total_steps * 100), 99)
+                _tasks[task_id]["progress"] = pct
+                _tasks[task_id]["msg"] = f"Generating ({width}x{height}, {step_count[0]}/{total_steps} steps)..."
+                return result
 
-        if torch.backends.mps.is_available():
-            mem_drv = torch.mps.driver_allocated_memory()
-            mem_cur = torch.mps.current_allocated_memory()
-            mem_max = torch.mps.recommended_max_memory()
-            mem_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            logger.info("Task %s done in %.1fs  |  MPS cur:%.1fG drv:%.1fG max:%.1fG  |  RSS: %.1fG",
-                         task_id, gen_s,
-                         mem_cur / (1024**3),
-                         mem_drv / (1024**3),
-                         mem_max / (1024**3) if mem_max else 0,
-                         mem_rss / (1024**2))
-        else:
-            mem_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            logger.info("Task %s done in %.1fs  |  RSS: %.1fG",
-                         task_id, gen_s,
-                         mem_rss / (1024**2))
+            pipe.unconditional_transformer.forward = _patched_forward
+            try:
+                with torch.inference_mode():
+                    images = pipe(
+                        prompts=prompt_str,
+                        height=height,
+                        width=width,
+                        num_steps=total_steps,
+                        guidance_schedule=preset_cfg.guidance_schedule,
+                        mu=preset_cfg.mu,
+                        std=preset_cfg.std,
+                        seed=seed,
+                        raise_on_caption_issues=False,
+                    )
+            finally:
+                pipe.unconditional_transformer.forward = _orig_forward
 
-        buf = BytesIO()
-        save_kw = {}
-        if fmt in ("webp", "jpeg"):
-            save_kw["quality"] = IMAGE_QUALITY_WEBP if fmt == "webp" else IMAGE_QUALITY_JPEG
-        PIL_fmt = fmt.upper()
-        images[0].save(buf, format=PIL_fmt, **save_kw)
-        buf.seek(0)
+            gen_s = time.time() - t0
+            _tasks[task_id]["progress"] = 100
+            _tasks[task_id]["msg"] = f"Done in {gen_s:.1f}s"
 
-        timestamp = uuid.uuid4().hex[:12]
-        filename = f"{timestamp}.{fmt}"
-        filepath = OUTPUT_DIR / filename
-        filepath.write_bytes(buf.getvalue())
-        buf.seek(0)
+            if torch.backends.mps.is_available():
+                mem_drv = torch.mps.driver_allocated_memory()
+                mem_cur = torch.mps.current_allocated_memory()
+                mem_max = torch.mps.recommended_max_memory()
+                mem_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                logger.info("Task %s done in %.1fs  |  MPS cur:%.1fG drv:%.1fG max:%.1fG  |  RSS: %.1fG",
+                             task_id, gen_s,
+                             mem_cur / (1024**3),
+                             mem_drv / (1024**3),
+                             mem_max / (1024**3) if mem_max else 0,
+                             mem_rss / (1024**2))
+            else:
+                mem_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                logger.info("Task %s done in %.1fs  |  RSS: %.1fG",
+                             task_id, gen_s,
+                             mem_rss / (1024**2))
 
-        hld_text = caption.get("high_level_description", "")
-        lora_status = get_lora_status()
-        lora_name = lora_status.get("applied")
-        lora_strength = lora_status.get("strength") if lora_name else None
+            buf = BytesIO()
+            save_kw = {}
+            if fmt in ("webp", "jpeg"):
+                save_kw["quality"] = IMAGE_QUALITY_WEBP if fmt == "webp" else IMAGE_QUALITY_JPEG
+            PIL_fmt = fmt.upper()
+            images[0].save(buf, format=PIL_fmt, **save_kw)
+            buf.seek(0)
 
-        image_id = add_image(
-            hld_text, width, height, preset, seed,
-            str(filepath),
-            _tasks[task_id].get("prompt_id"),
-            lora_name,
-            lora_strength,
-        )
+            timestamp = uuid.uuid4().hex[:12]
+            filename = f"{timestamp}.{fmt}"
+            filepath = OUTPUT_DIR / filename
+            filepath.write_bytes(buf.getvalue())
+            buf.seek(0)
+
+            hld_text = caption.get("high_level_description", "")
+            lora_status = get_lora_status()
+            lora_name = lora_status.get("applied")
+            lora_strength = lora_status.get("strength") if lora_name else None
+
+            image_id = add_image(
+                hld_text, width, height, preset, seed,
+                str(filepath),
+                _tasks[task_id].get("prompt_id"),
+                lora_name,
+                lora_strength,
+            )
 
         logger.info("Task %s → %s (id=%d, %dx%d, lora=%s)", task_id, filename, image_id, width, height, lora_name or "none")
 

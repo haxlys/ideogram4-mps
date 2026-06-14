@@ -68,3 +68,20 @@ export function buildCaptionJson(form: FormState) {
     },
   };
 }
+
+export function getCaptionForGeneration(form: FormState) {
+  const raw = form.rawJson.trim();
+  if (!raw) return buildCaptionJson(form);
+
+  const caption = JSON.parse(raw);
+  if (!caption || typeof caption !== "object" || Array.isArray(caption)) {
+    throw new Error("Raw JSON must be a JSON object.");
+  }
+  return caption as Record<string, unknown>;
+}
+
+export function getCaptionHld(caption: Record<string, unknown>, fallback = "") {
+  return typeof caption.high_level_description === "string"
+    ? caption.high_level_description
+    : fallback;
+}

@@ -64,6 +64,14 @@ def _get_logger() -> logging.Logger:
 import torch
 import safetensors.torch as sf
 
+from server.config import (
+    DEFAULT_LORA_STRENGTH,
+    IMAGE_QUALITY_JPEG,
+    MODEL_REPO,
+    WARMUP_SIZE,
+    WARMUP_STEPS,
+)
+
 FP8_DTYPE = torch.float8_e4m3fn
 
 
@@ -171,8 +179,7 @@ def patch_scheduler():
 
 
 def load_pipeline(snapshot: Path, device):
-    from server.config import MODEL_REPO, WARMUP_SIZE, WARMUP_STEPS, DEFAULT_LORA_STRENGTH, IMAGE_QUALITY_JPEG
-from ideogram4 import Ideogram4Pipeline, Ideogram4PipelineConfig
+    from ideogram4 import Ideogram4Pipeline, Ideogram4PipelineConfig
     from transformers import AutoTokenizer
 
     logger = _get_logger()

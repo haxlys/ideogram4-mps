@@ -27,7 +27,8 @@ export function PromptHistory({ sidebar }: PromptHistoryProps) {
   }, [state.historyRefresh]);
 
   const restore = useCallback(async (entry: PromptEntry) => {
-    const { _savedAt, _id, ...form } = entry;
+    const { _savedAt: _savedAtValue, _id, ...form } = entry;
+    void _savedAtValue;
     dispatch({ type: "RESTORE_FORM", form, promptId: _id ?? undefined });
     if (_id != null) {
       try {
@@ -56,8 +57,7 @@ export function PromptHistory({ sidebar }: PromptHistoryProps) {
     }
   }, [dispatch, sidebar, navigate]);
 
-  const handleDelete = useCallback((e: React.MouseEvent, entry: PromptEntry) => {
-    e.stopPropagation();
+  const deleteEntry = useCallback((entry: PromptEntry) => {
     if (entry._id == null) return;
     deletePrompt(entry._id);
     setEntries((prev) => prev.filter((p) => p._id !== entry._id));
@@ -101,8 +101,17 @@ export function PromptHistory({ sidebar }: PromptHistoryProps) {
                 tabIndex={0}
                 aria-label={`Delete ${entry.hld.slice(0, 20) || "prompt"}`}
                 className="size-6 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center justify-center rounded-md transition-colors hover:bg-muted cursor-pointer"
-                onClick={(e) => handleDelete(e, entry)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleDelete(e as any, entry); } }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteEntry(entry);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    deleteEntry(entry);
+                  }
+                }}
               >
                 <Trash2 className="size-3" />
               </span>

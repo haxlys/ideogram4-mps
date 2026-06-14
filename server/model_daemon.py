@@ -251,6 +251,20 @@ _lora_strength: float = DEFAULT_LORA_STRENGTH
 _original_states: dict | None = None
 
 
+def _clone_state_dict_to_cpu(state_dict: dict) -> dict:
+    return {
+        k: v.detach().cpu().clone() if hasattr(v, "detach") else v
+        for k, v in state_dict.items()
+    }
+
+
+def _restore_original_lora_targets(pipe):
+    if _original_states is None:
+        return
+    pipe.conditional_transformer.load_state_dict(_original_states["cond"], strict=False)
+    pipe.unconditional_transformer.load_state_dict(_original_states["uncond"], strict=False)
+
+
 def _detect_lora_format(lora_path: str) -> str:
     sd = sf.load_file(lora_path)
     for key in sd.keys():
@@ -298,9 +312,11 @@ def apply_lora(name: str, strength: float = DEFAULT_LORA_STRENGTH) -> dict:
 
     if _original_states is None:
         _original_states = {
-            "cond": {k: v.clone() for k, v in pipe.conditional_transformer.state_dict().items()},
-            "uncond": {k: v.clone() for k, v in pipe.unconditional_transformer.state_dict().items()},
+            "cond": _clone_state_dict_to_cpu(pipe.conditional_transformer.state_dict()),
+            "uncond": _clone_state_dict_to_cpu(pipe.unconditional_transformer.state_dict()),
         }
+    else:
+        _restore_original_lora_targets(pipe)
 
     if fmt == "lokr":
         sd = pipe.conditional_transformer.state_dict()
@@ -333,8 +349,7 @@ def remove_lora() -> dict:
     if _original_states is None:
         return {"ok": False, "msg": "No LoRA applied."}
 
-    pipe.conditional_transformer.load_state_dict(_original_states["cond"], strict=False)
-    pipe.unconditional_transformer.load_state_dict(_original_states["uncond"], strict=False)
+    _restore_original_lora_targets(pipe)
 
     _original_states = None
     _lora_applied = None

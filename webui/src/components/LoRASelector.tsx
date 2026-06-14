@@ -18,15 +18,15 @@ export function LoRASelector() {
   const [strength, setStrength] = useState(0.6);
   const [loading, setLoading] = useState(false);
   const [loadingName, setLoadingName] = useState<string | null>(null);
-  const [fetching, setFetching] = useState(false);
 
   useEffect(() => {
-    setFetching(true);
     getLoraStatus().then((s) => {
       setLoras(s.available);
       setApplied(s.applied);
       setStrength(s.strength);
-    }).catch(() => {}).finally(() => setFetching(false));
+    }).catch(() => {
+      // LoRA support is optional; hide the selector when status is unavailable.
+    });
   }, [state.modelState]);
 
   const handleApply = async (name: string) => {
@@ -64,18 +64,6 @@ export function LoRASelector() {
       setLoading(false);
     }
   };
-
-  if (fetching && loras.length === 0) {
-    return (
-      <div className="space-y-1.5 pt-1 border-t border-border">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="size-3 text-muted-foreground" />
-          <Label className="text-[13px] font-medium text-muted-foreground">LoRA</Label>
-          <span className="text-[10px] text-muted-foreground">Loading…</span>
-        </div>
-      </div>
-    );
-  }
 
   if (loras.length === 0) return null;
 

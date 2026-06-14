@@ -49,7 +49,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     try {
       const body = await res.json();
       if (body.error) msg = body.error;
-    } catch {}
+    } catch {
+      // Keep the generic HTTP message if the response is not JSON.
+    }
     throw new Error(msg);
   }
   return res.json();

@@ -4,7 +4,7 @@ import { useAppState } from "@/state/context";
 import { useFormAutosave } from "@/hooks/useFormAutosave";
 import { useGeneratePolling } from "@/hooks/useGeneratePolling";
 import { submitGenerate, verifyCaption, getImages } from "@/api/client";
-import { buildCaptionJson } from "@/validation/caption";
+import { getCaptionForGeneration, getCaptionHld } from "@/validation/caption";
 import { savePrompt, loadPromptHistory } from "@/state/storage";
 import { CaptionEditor } from "@/components/CaptionEditor";
 import { GenerationSettings } from "@/components/GenerationSettings";
@@ -36,7 +36,8 @@ function HistoryPage() {
         toast.error("Prompt not found");
         return;
       }
-      const { _savedAt, _id, ...form } = entry;
+      const { _savedAt: _savedAtValue, _id, ...form } = entry;
+      void _savedAtValue;
       dispatch({ type: "RESTORE_FORM", form, promptId: _id ?? undefined });
       getImages(_id!).then((images) => {
         if (images.length > 0) {
@@ -52,7 +53,9 @@ function HistoryPage() {
             },
           });
         }
-      }).catch(() => {});
+      }).catch(() => {
+        // Missing images should not prevent restoring the prompt.
+      });
     });
   }, [promptId, dispatch]);
 
@@ -62,7 +65,13 @@ function HistoryPage() {
       return;
     }
 
-    const caption = buildCaptionJson(state.form);
+    let caption: Record<string, unknown>;
+    try {
+      caption = getCaptionForGeneration(state.form);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Raw JSON is invalid.");
+      return;
+    }
 
     if (!state.form.rawJson.trim()) {
       try {
@@ -74,12 +83,13 @@ function HistoryPage() {
           if (!proceed) return;
         }
       } catch {
+        // Verification is best-effort; generation can still proceed.
       }
     }
 
     savePrompt({
       ...state.form,
-      hld: state.form.rawJson.trim() ? (caption.high_level_description || state.form.hld) : state.form.hld,
+      hld: getCaptionHld(caption, state.form.hld),
     }).then((promptId) => {
       dispatch({ type: "REFRESH_HISTORY" });
       dispatch({ type: "SET_GEN_STATUS", status: "submitting", msg: "Submitting…" });

@@ -6,7 +6,10 @@ VENV_PYTHON="$ROOT/.venv/bin/python"
 PNPM="$(command -v pnpm)"
 
 if [ -f "$ROOT/.env" ]; then
-  export $(grep -v '^\s*#' "$ROOT/.env" | xargs)
+  set -a
+  # shellcheck source=/dev/null
+  source "$ROOT/.env"
+  set +a
 fi
 
 SERVER_PORT=8000

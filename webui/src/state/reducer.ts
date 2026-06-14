@@ -37,14 +37,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "SET_MODEL_STATE":
       return { ...state, modelState: action.state };
 
-    case "SET_FORM":
+    case "SET_FORM": {
       if ("rawJson" in action.form) {
         const jsonValue = action.form.rawJson ?? "";
         if (!jsonValue.trim()) return { ...state, form: { ...state.form, rawJson: "" } };
         try {
           const caption = JSON.parse(jsonValue);
           const patch = captionToForm(caption);
-          const { rawJson: _, ...formPatch } = patch;
+          const { rawJson: ignoredRawJson, ...formPatch } = patch;
+          void ignoredRawJson;
           return { ...state, form: { ...state.form, ...formPatch, rawJson: jsonValue } };
         } catch {
           return { ...state, form: { ...state.form, ...action.form } };
@@ -53,6 +54,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const nextForm = { ...state.form, ...action.form };
       const syncedJson = JSON.stringify(buildCaptionJson(nextForm), null, 2);
       return { ...state, form: { ...nextForm, rawJson: syncedJson } };
+    }
 
     case "RESTORE_FORM": {
       const loaded = action.form;
@@ -60,7 +62,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         try {
           const caption = JSON.parse(loaded.rawJson);
           const patch = captionToForm(caption);
-          const { rawJson: _, ...formPatch } = patch;
+          const { rawJson: ignoredRawJson, ...formPatch } = patch;
+          void ignoredRawJson;
           return { ...state, form: { ...loaded, ...formPatch }, selectedPromptId: action.promptId ?? null };
         } catch { /* keep form as-is */ }
       }
