@@ -157,7 +157,13 @@ def _load_pipeline(snapshot: Path, device) -> Ideogram4Pipeline:
     return pipe
 
 
-def _warmup_pipeline(pipe: Ideogram4Pipeline):
+def _emit_progress(progress_cb, progress: int, msg: str, phase: str):
+    if progress_cb:
+        progress_cb(progress=progress, msg=msg, phase=phase)
+
+
+def _warmup_pipeline(pipe: Ideogram4Pipeline, progress_cb=None):
+    _emit_progress(progress_cb, 80, "Warming up MPSGraph kernels...", "warmup")
     logger.info("Warming up MPSGraph kernels...")
     t0 = time.time()
     with torch.inference_mode():
@@ -174,6 +180,7 @@ def _warmup_pipeline(pipe: Ideogram4Pipeline):
         )
     torch.mps.empty_cache()
     logger.info("  warmup done in %.1fs", time.time() - t0)
+    _emit_progress(progress_cb, 95, "Warmup complete.", "warmup")
 
 
 # ── public API ──────────────────────────────────────────────────
@@ -419,29 +426,38 @@ def download_lora_preset(preset_id: str) -> list[dict]:
     return downloaded
 
 
-def _merge_lora_into_pipe(pipe, lora_path: Path, fmt: str, strength: float):
+def _merge_lora_into_pipe(pipe, lora_path: Path, fmt: str, strength: float, progress_cb=None, progress_start: int = 35, progress_span: int = 35):
     import importlib
     apply_mod = importlib.import_module("apply_lora")
+    label = lora_path.name
+    midpoint = progress_start + progress_span // 2
+    progress_end = progress_start + progress_span
 
     if fmt == "lokr":
+        _emit_progress(progress_cb, progress_start, f"Merging {label} into conditional transformer...", "merge")
         sd = pipe.conditional_transformer.state_dict()
         apply_mod.apply_lokr_lora(sd, str(lora_path), strength=strength)
         pipe.conditional_transformer.load_state_dict(sd, strict=False)
+        _emit_progress(progress_cb, midpoint, f"Merging {label} into unconditional transformer...", "merge")
         sd2 = pipe.unconditional_transformer.state_dict()
         apply_mod.apply_lokr_lora(sd2, str(lora_path), strength=strength)
         pipe.unconditional_transformer.load_state_dict(sd2, strict=False)
     else:
+        _emit_progress(progress_cb, progress_start, f"Merging {label} into conditional transformer...", "merge")
         sd = pipe.conditional_transformer.state_dict()
         apply_mod.apply_std_lora(sd, str(lora_path), strength=strength)
         pipe.conditional_transformer.load_state_dict(sd, strict=False)
+        _emit_progress(progress_cb, midpoint, f"Merging {label} into unconditional transformer...", "merge")
         sd2 = pipe.unconditional_transformer.state_dict()
         apply_mod.apply_std_lora(sd2, str(lora_path), strength=strength)
         pipe.unconditional_transformer.load_state_dict(sd2, strict=False)
+    _emit_progress(progress_cb, progress_end, f"Merged {label}.", "merge")
 
 
-def apply_loras(loras: list[dict]) -> dict:
+def apply_loras(loras: list[dict], progress_cb=None) -> dict:
     global _lora_applied, _lora_strength, _lora_stack, _original_states
 
+    _emit_progress(progress_cb, 5, "Checking LoRA files...", "validate")
     pipe = get_pipeline()
     if pipe is None:
         return {"ok": False, "msg": "Model not loaded."}
@@ -468,15 +484,32 @@ def apply_loras(loras: list[dict]) -> dict:
         return {"ok": False, "msg": "No LoRAs requested."}
 
     if _original_states is None:
+        _emit_progress(progress_cb, 15, "Backing up base weights...", "backup")
         _original_states = {
             "cond": _clone_state_dict_to_cpu(pipe.conditional_transformer.state_dict()),
             "uncond": _clone_state_dict_to_cpu(pipe.unconditional_transformer.state_dict()),
         }
+        _emit_progress(progress_cb, 30, "Base weights backed up.", "backup")
     else:
+        _emit_progress(progress_cb, 15, "Restoring base weights before applying new LoRA...", "restore")
         _restore_original_lora_targets(pipe)
+        _emit_progress(progress_cb, 30, "Base weights restored.", "restore")
 
-    for item in requested:
-        _merge_lora_into_pipe(pipe, item["path"], item["format"], item["strength"])
+    merge_start = 35
+    merge_total = 35
+    merge_span = max(1, merge_total // len(requested))
+    for idx, item in enumerate(requested):
+        item_start = merge_start + idx * merge_span
+        item_span = merge_total - idx * merge_span if idx == len(requested) - 1 else merge_span
+        _merge_lora_into_pipe(
+            pipe,
+            item["path"],
+            item["format"],
+            item["strength"],
+            progress_cb=progress_cb,
+            progress_start=item_start,
+            progress_span=item_span,
+        )
 
     _lora_stack = [
         {"name": item["name"], "strength": item["strength"], "format": item["format"]}
@@ -485,30 +518,34 @@ def apply_loras(loras: list[dict]) -> dict:
     _lora_applied = " + ".join(item["name"] for item in _lora_stack)
     _lora_strength = _lora_stack[0]["strength"] if len(_lora_stack) == 1 else 0.0
     logger.info("LoRA stack applied: %s", _lora_stack)
-    _warmup_pipeline(pipe)
+    _emit_progress(progress_cb, 75, "LoRA weights merged. Preparing warmup...", "warmup")
+    _warmup_pipeline(pipe, progress_cb=progress_cb)
     return {"ok": True, "msg": f"LoRA stack applied: {_lora_applied}", "applied_loras": _lora_stack}
 
 
-def apply_lora(name: str, strength: float = DEFAULT_LORA_STRENGTH) -> dict:
-    return apply_loras([{"name": name, "strength": strength}])
+def apply_lora(name: str, strength: float = DEFAULT_LORA_STRENGTH, progress_cb=None) -> dict:
+    return apply_loras([{"name": name, "strength": strength}], progress_cb=progress_cb)
 
 
-def remove_lora() -> dict:
+def remove_lora(progress_cb=None) -> dict:
     global _lora_applied, _lora_stack, _original_states
 
+    _emit_progress(progress_cb, 5, "Checking applied LoRA...", "validate")
     pipe = get_pipeline()
     if pipe is None:
         return {"ok": False, "msg": "Model not loaded."}
     if _original_states is None:
         return {"ok": False, "msg": "No LoRA applied."}
 
+    _emit_progress(progress_cb, 25, "Restoring original weights...", "restore")
     _restore_original_lora_targets(pipe)
+    _emit_progress(progress_cb, 65, "Original weights restored.", "restore")
 
     _original_states = None
     _lora_applied = None
     _lora_stack = []
     logger.info("LoRA removed, original weights restored")
-    _warmup_pipeline(pipe)
+    _warmup_pipeline(pipe, progress_cb=progress_cb)
     return {"ok": True, "msg": "LoRA removed, original weights restored."}
 
 

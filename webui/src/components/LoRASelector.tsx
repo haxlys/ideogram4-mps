@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useReducer } from "react";
 import { useAppState } from "@/state/context";
 import {
   applyLoraStack,
   downloadLoraPreset,
   getLoraDownloadStatus,
+  getLoraOperationStatus,
   getLoraPresets,
   getLoraStatus,
   removeLora as removeLoraApi,
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { Download, Layers2, Sparkles, X } from "lucide-react";
 
@@ -31,6 +33,58 @@ interface LoraPreset {
   installed: boolean;
   loras: LoraPresetEntry[];
 }
+interface LoraOperationUiState {
+  msg: string;
+  phase: string;
+  progress: number;
+}
+interface LoraUiState {
+  presets: LoraPreset[];
+  applied: string | null;
+  appliedLoras: AppliedLora[];
+  loading: boolean;
+  loadingPreset: string | null;
+  downloadingPreset: string | null;
+  loraOperation: LoraOperationUiState | null;
+}
+type LoraUiAction =
+  | { type: "HYDRATE"; presets: LoraPreset[]; applied: string | null; appliedLoras: AppliedLora[] }
+  | { type: "SET_LOADING"; loading: boolean; loadingPreset?: string | null; loraOperation?: LoraOperationUiState | null }
+  | { type: "SET_DOWNLOADING"; presetId: string | null }
+  | { type: "SET_OPERATION"; operation: LoraOperationUiState | null };
+
+const initialLoraUiState: LoraUiState = {
+  presets: [],
+  applied: null,
+  appliedLoras: [],
+  loading: false,
+  loadingPreset: null,
+  downloadingPreset: null,
+  loraOperation: null,
+};
+
+function loraUiReducer(state: LoraUiState, action: LoraUiAction): LoraUiState {
+  switch (action.type) {
+    case "HYDRATE":
+      return {
+        ...state,
+        presets: action.presets,
+        applied: action.applied,
+        appliedLoras: action.appliedLoras,
+      };
+    case "SET_LOADING":
+      return {
+        ...state,
+        loading: action.loading,
+        loadingPreset: action.loadingPreset === undefined ? state.loadingPreset : action.loadingPreset,
+        loraOperation: action.loraOperation === undefined ? state.loraOperation : action.loraOperation,
+      };
+    case "SET_DOWNLOADING":
+      return { ...state, downloadingPreset: action.presetId };
+    case "SET_OPERATION":
+      return { ...state, loraOperation: action.operation };
+  }
+}
 
 function stackKey(loras: Array<{ name: string; strength: number }>) {
   return loras.map((l) => `${l.name}:${l.strength}`).join("|");
@@ -45,37 +99,53 @@ function friendlyName(name: string) {
 }
 
 function presetSize(preset: LoraPreset) {
-  const installedSizes = preset.loras
-    .map((lora) => lora.size_mb ?? 0)
-    .filter((size) => size > 0);
-  if (installedSizes.length === 0) return null;
-  const total = installedSizes.reduce((sum, size) => sum + size, 0);
+  const total = preset.loras.reduce((sum, lora) => {
+    const size = lora.size_mb ?? 0;
+    return size > 0 ? sum + size : sum;
+  }, 0);
+  if (total <= 0) return null;
   return total > 1000 ? `${(total / 1000).toFixed(1)}G` : `${total.toFixed(0)}M`;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function waitForDownload(taskId: string): Promise<string> {
+  const status = await getLoraDownloadStatus(taskId);
+  if (status.state === "done") {
+    if (status.error) throw new Error(status.error);
+    return status.msg;
+  }
+  await delay(1500);
+  return waitForDownload(taskId);
 }
 
 export function LoRASelector() {
   const { state } = useAppState();
-  const [presets, setPresets] = useState<LoraPreset[]>([]);
-  const [applied, setApplied] = useState<string | null>(null);
-  const [appliedLoras, setAppliedLoras] = useState<AppliedLora[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingPreset, setLoadingPreset] = useState<string | null>(null);
-  const [downloadingPreset, setDownloadingPreset] = useState<string | null>(null);
+  const [loraState, dispatchLora] = useReducer(loraUiReducer, initialLoraUiState);
+  const { presets, applied, appliedLoras, loading, loadingPreset, downloadingPreset, loraOperation } = loraState;
 
   const refresh = async () => {
     const [status, presetRes] = await Promise.all([getLoraStatus(), getLoraPresets()]);
-    setPresets(presetRes.presets);
-    setApplied(status.applied);
-    setAppliedLoras(status.applied_loras ?? (status.applied ? [{ name: status.applied, strength: status.strength }] : []));
+    dispatchLora({
+      type: "HYDRATE",
+      presets: presetRes.presets,
+      applied: status.applied,
+      appliedLoras: status.applied_loras ?? (status.applied ? [{ name: status.applied, strength: status.strength }] : []),
+    });
   };
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([getLoraStatus(), getLoraPresets()]).then(([status, presetRes]) => {
       if (cancelled) return;
-      setPresets(presetRes.presets);
-      setApplied(status.applied);
-      setAppliedLoras(status.applied_loras ?? (status.applied ? [{ name: status.applied, strength: status.strength }] : []));
+      dispatchLora({
+        type: "HYDRATE",
+        presets: presetRes.presets,
+        applied: status.applied,
+        appliedLoras: status.applied_loras ?? (status.applied ? [{ name: status.applied, strength: status.strength }] : []),
+      });
     }).catch(() => {
       // LoRA support is optional; hide the selector when status is unavailable.
     });
@@ -86,40 +156,51 @@ export function LoRASelector() {
 
   const activeKey = stackKey(appliedLoras);
 
+  const waitForLoraOperation = async (taskId: string) => {
+    const status = await getLoraOperationStatus(taskId);
+    dispatchLora({
+      type: "SET_OPERATION",
+      operation: {
+        msg: status.msg,
+        phase: status.phase,
+        progress: status.progress,
+      },
+    });
+    if (status.state === "done") {
+      if (status.error) throw new Error(status.error);
+      if (status.result && !status.result.ok) throw new Error(status.result.msg);
+      return status.result ?? { ok: true, msg: status.msg };
+    }
+    await delay(1000);
+    return waitForLoraOperation(taskId);
+  };
+
   const handleApplyPreset = async (preset: LoraPreset) => {
-    setLoadingPreset(preset.id);
-    setLoading(true);
+    dispatchLora({
+      type: "SET_LOADING",
+      loading: true,
+      loadingPreset: preset.id,
+      loraOperation: { msg: "Queued LoRA apply...", phase: "queued", progress: 0 },
+    });
     try {
       const loras = preset.loras.map((lora) => ({ name: lora.name, strength: lora.strength }));
       const res = await applyLoraStack(loras);
-      if (res.ok) {
-        setApplied(loras.map((lora) => lora.name).join(" + "));
-        setAppliedLoras(res.applied_loras ?? loras);
-        toast.success(res.msg);
+      if (res.ok && res.task_id) {
+        const result = await waitForLoraOperation(res.task_id);
+        await refresh();
+        toast.success(result.msg);
       } else {
-        toast.error(res.msg);
+        toast.error(res.msg ?? "Failed to start LoRA apply.");
       }
     } catch (e) {
       toast.error(String(e));
     } finally {
-      setLoading(false);
-      setLoadingPreset(null);
-    }
-  };
-
-  const waitForDownload = async (taskId: string) => {
-    for (;;) {
-      const status = await getLoraDownloadStatus(taskId);
-      if (status.state === "done") {
-        if (status.error) throw new Error(status.error);
-        return status.msg;
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      dispatchLora({ type: "SET_LOADING", loading: false, loadingPreset: null, loraOperation: null });
     }
   };
 
   const handleDownloadPreset = async (preset: LoraPreset) => {
-    setDownloadingPreset(preset.id);
+    dispatchLora({ type: "SET_DOWNLOADING", presetId: preset.id });
     try {
       const res = await downloadLoraPreset(preset.id);
       if (!res.ok || !res.task_id) {
@@ -132,25 +213,30 @@ export function LoRASelector() {
     } catch (e) {
       toast.error(String(e));
     } finally {
-      setDownloadingPreset(null);
+      dispatchLora({ type: "SET_DOWNLOADING", presetId: null });
     }
   };
 
   const handleRemove = async () => {
-    setLoading(true);
+    dispatchLora({
+      type: "SET_LOADING",
+      loading: true,
+      loadingPreset: null,
+      loraOperation: { msg: "Queued LoRA remove...", phase: "queued", progress: 0 },
+    });
     try {
       const res = await removeLoraApi();
-      if (res.ok) {
-        setApplied(null);
-        setAppliedLoras([]);
-        toast.success(res.msg);
+      if (res.ok && res.task_id) {
+        const result = await waitForLoraOperation(res.task_id);
+        await refresh();
+        toast.success(result.msg);
       } else {
-        toast.error(res.msg);
+        toast.error(res.msg ?? "Failed to start LoRA remove.");
       }
     } catch (e) {
       toast.error(String(e));
     } finally {
-      setLoading(false);
+      dispatchLora({ type: "SET_LOADING", loading: false, loadingPreset: null, loraOperation: null });
     }
   };
 
@@ -220,6 +306,17 @@ export function LoRASelector() {
           );
         })}
       </div>
+
+      {loraOperation && (
+        <div className="space-y-1.5 rounded-md border border-border bg-muted/30 px-2 py-1.5">
+          <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+            <Spinner className="size-3 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{loraOperation.msg}</span>
+            <span className="shrink-0 tabular-nums">{loraOperation.progress}%</span>
+          </div>
+          <Progress value={loraOperation.progress} className="h-1" />
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-1">
         <Layers2 className="size-3 text-muted-foreground" />

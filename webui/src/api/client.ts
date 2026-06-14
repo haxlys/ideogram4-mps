@@ -119,11 +119,22 @@ interface LoraPreset { id: string; label: string; installed: boolean; loras: Lor
 interface LoraPresetsResponse { presets: LoraPreset[]; }
 interface LoraDownloadResponse { ok: boolean; msg?: string; task_id?: string; }
 interface LoraDownloadStatus { state: "running" | "done"; msg: string; files: Array<{name: string; status: string}>; error?: string | null; }
+interface LoraOperationResponse { ok: boolean; msg?: string; task_id?: string; }
+interface LoraOperationResult { ok: boolean; msg: string; applied_loras?: AppliedLora[]; }
+interface LoraOperationStatus {
+  state: "running" | "done";
+  msg: string;
+  phase: string;
+  progress: number;
+  error?: string | null;
+  result?: LoraOperationResult;
+}
 
 export async function getLoraStatus() { return request<LoraStatus>('/api/lora/status'); }
-export async function applyLora(name: string, strength: number) { return request<{ok: boolean; msg: string}>('/api/lora/apply', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name, strength}) }); }
-export async function applyLoraStack(loras: Array<{name: string; strength: number}>) { return request<{ok: boolean; msg: string; applied_loras?: AppliedLora[]}>('/api/lora/apply', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({loras}) }); }
+export async function applyLora(name: string, strength: number) { return request<LoraOperationResponse>('/api/lora/apply', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name, strength}) }); }
+export async function applyLoraStack(loras: Array<{name: string; strength: number}>) { return request<LoraOperationResponse>('/api/lora/apply', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({loras}) }); }
 export async function getLoraPresets() { return request<LoraPresetsResponse>('/api/lora/presets'); }
 export async function downloadLoraPreset(presetId: string) { return request<LoraDownloadResponse>('/api/lora/download', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({preset_id: presetId}) }); }
 export async function getLoraDownloadStatus(taskId: string) { return request<LoraDownloadStatus>(`/api/lora/download/${taskId}`); }
-export async function removeLora() { return request<{ok: boolean; msg: string}>('/api/lora/remove', { method: 'POST' }); }
+export async function getLoraOperationStatus(taskId: string) { return request<LoraOperationStatus>(`/api/lora/operation/${taskId}`); }
+export async function removeLora() { return request<LoraOperationResponse>('/api/lora/remove', { method: 'POST' }); }

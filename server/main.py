@@ -49,14 +49,47 @@ _tasks: dict = {}
 _tasks_lock = threading.Lock()
 _lora_download_tasks: dict = {}
 _lora_download_tasks_lock = threading.Lock()
+_lora_op_tasks: dict = {}
+_lora_op_tasks_lock = threading.Lock()
+_lora_op_lock = threading.Lock()
 _pipeline_ops_lock = threading.Lock()
+_pipeline_op_state_lock = threading.Lock()
+_pipeline_op_state: dict = {"label": None, "started_at": None}
 _generation_lock = threading.Lock()
 _TASK_TTL_SECONDS = 60 * 60
 
 
 def _load_model_locked():
-    with _pipeline_ops_lock:
+    _pipeline_ops_lock.acquire()
+    _set_pipeline_op("loading model")
+    try:
         return handle_load()
+    finally:
+        _clear_pipeline_op()
+        _pipeline_ops_lock.release()
+
+
+def _set_pipeline_op(label: str):
+    with _pipeline_op_state_lock:
+        _pipeline_op_state["label"] = label
+        _pipeline_op_state["started_at"] = time.time()
+
+
+def _clear_pipeline_op():
+    with _pipeline_op_state_lock:
+        _pipeline_op_state["label"] = None
+        _pipeline_op_state["started_at"] = None
+
+
+def _pipeline_op_desc() -> str:
+    with _pipeline_op_state_lock:
+        label = _pipeline_op_state.get("label")
+        started_at = _pipeline_op_state.get("started_at")
+    if not label:
+        return "current model operation"
+    if not started_at:
+        return label
+    return f"{label} ({int(time.time() - started_at)}s)"
 
 
 def _cleanup_tasks_locked():
@@ -71,6 +104,31 @@ def _cleanup_lora_download_tasks_locked():
     for task_id, task in list(_lora_download_tasks.items()):
         if task.get("state") == "done" and task.get("done_at", task.get("created_at", 0)) < cutoff:
             del _lora_download_tasks[task_id]
+
+
+def _cleanup_lora_op_tasks_locked():
+    cutoff = time.time() - _TASK_TTL_SECONDS
+    for task_id, task in list(_lora_op_tasks.items()):
+        if task.get("state") == "done" and task.get("done_at", task.get("created_at", 0)) < cutoff:
+            del _lora_op_tasks[task_id]
+
+
+def _update_lora_op_task(task_id: str, **updates):
+    with _lora_op_tasks_lock:
+        task = _lora_op_tasks.get(task_id)
+        if task is not None:
+            task.update(updates)
+
+
+def _lora_progress_callback(task_id: str):
+    def _callback(progress: int, msg: str, phase: str):
+        _update_lora_op_task(
+            task_id,
+            progress=max(0, min(progress, 99)),
+            msg=msg,
+            phase=phase,
+        )
+    return _callback
 
 
 def _busy_response(msg: str):
@@ -108,7 +166,7 @@ def api_load_model():
     if not is_mps_available():
         return {"ok": False, "msg": "MPS not available. Requires Apple Silicon."}
     if _pipeline_ops_lock.locked():
-        return _busy_response("A model operation is already running.")
+        return _busy_response(f"A model operation is already running: {_pipeline_op_desc()}.")
     threading.Thread(target=_load_model_locked, daemon=True).start()
     return {"ok": True, "msg": "Load started."}
 
@@ -116,10 +174,12 @@ def api_load_model():
 @app.post("/api/model/unload")
 def api_unload_model():
     if not _pipeline_ops_lock.acquire(blocking=False):
-        return _busy_response("A model operation is already running.")
+        return _busy_response(f"A model operation is already running: {_pipeline_op_desc()}.")
+    _set_pipeline_op("unloading model")
     try:
         return handle_unload()
     finally:
+        _clear_pipeline_op()
         _pipeline_ops_lock.release()
 
 
@@ -193,6 +253,101 @@ def api_lora_download_status(task_id: str):
         }
 
 
+def _run_lora_apply(task_id: str, requested_loras, name: str, strength: float):
+    try:
+        wait_started = time.time()
+        while not _pipeline_ops_lock.acquire(timeout=1):
+            waited_s = int(time.time() - wait_started)
+            _update_lora_op_task(
+                task_id,
+                msg=f"Waiting for {_pipeline_op_desc()}... ({waited_s}s)",
+                phase="waiting",
+                progress=0,
+            )
+
+        _set_pipeline_op("applying LoRA and warming up")
+        try:
+            _update_lora_op_task(task_id, msg="Starting LoRA apply...", phase="start", progress=1)
+            if requested_loras:
+                result = apply_loras(requested_loras, progress_cb=_lora_progress_callback(task_id))
+            else:
+                result = apply_lora(name, strength, progress_cb=_lora_progress_callback(task_id))
+        finally:
+            _clear_pipeline_op()
+            _pipeline_ops_lock.release()
+
+        ok = bool(result.get("ok"))
+        _update_lora_op_task(
+            task_id,
+            state="done",
+            msg=result.get("msg", "LoRA apply complete." if ok else "LoRA apply failed."),
+            phase="done" if ok else "error",
+            progress=100 if ok else 0,
+            result=result,
+            error=None if ok else result.get("msg", "LoRA apply failed."),
+            done_at=time.time(),
+        )
+    except Exception as e:
+        logger.exception("LoRA apply task %s failed", task_id)
+        _update_lora_op_task(
+            task_id,
+            state="done",
+            msg=f"Error: {e}",
+            phase="error",
+            progress=0,
+            error=str(e),
+            done_at=time.time(),
+        )
+    finally:
+        _lora_op_lock.release()
+
+
+def _run_lora_remove(task_id: str):
+    try:
+        wait_started = time.time()
+        while not _pipeline_ops_lock.acquire(timeout=1):
+            waited_s = int(time.time() - wait_started)
+            _update_lora_op_task(
+                task_id,
+                msg=f"Waiting for {_pipeline_op_desc()}... ({waited_s}s)",
+                phase="waiting",
+                progress=0,
+            )
+
+        _set_pipeline_op("removing LoRA and warming up")
+        try:
+            _update_lora_op_task(task_id, msg="Starting LoRA remove...", phase="start", progress=1)
+            result = remove_lora(progress_cb=_lora_progress_callback(task_id))
+        finally:
+            _clear_pipeline_op()
+            _pipeline_ops_lock.release()
+
+        ok = bool(result.get("ok"))
+        _update_lora_op_task(
+            task_id,
+            state="done",
+            msg=result.get("msg", "LoRA removed." if ok else "LoRA remove failed."),
+            phase="done" if ok else "error",
+            progress=100 if ok else 0,
+            result=result,
+            error=None if ok else result.get("msg", "LoRA remove failed."),
+            done_at=time.time(),
+        )
+    except Exception as e:
+        logger.exception("LoRA remove task %s failed", task_id)
+        _update_lora_op_task(
+            task_id,
+            state="done",
+            msg=f"Error: {e}",
+            phase="error",
+            progress=0,
+            error=str(e),
+            done_at=time.time(),
+        )
+    finally:
+        _lora_op_lock.release()
+
+
 @app.post("/api/lora/apply")
 def api_apply_lora(req: dict):
     requested_loras = req.get("loras")
@@ -200,24 +355,83 @@ def api_apply_lora(req: dict):
     strength = float(req.get("strength", DEFAULT_LORA_STRENGTH))
     if not requested_loras and not name:
         return {"ok": False, "msg": "Missing LoRA name."}
-    if not _pipeline_ops_lock.acquire(blocking=False):
-        return _busy_response("A model operation is already running.")
+    if not _lora_op_lock.acquire(blocking=False):
+        return _busy_response("A LoRA operation is already running.")
+
+    task_id = uuid.uuid4().hex
+    with _lora_op_tasks_lock:
+        _cleanup_lora_op_tasks_locked()
+        _lora_op_tasks[task_id] = {
+            "state": "running",
+            "msg": "Queued LoRA apply...",
+            "phase": "queued",
+            "progress": 0,
+            "created_at": time.time(),
+        }
+
+    t = threading.Thread(
+        target=_run_lora_apply,
+        args=(task_id, requested_loras, name, strength),
+        daemon=True,
+    )
     try:
-        if requested_loras:
-            return apply_loras(requested_loras)
-        return apply_lora(name, strength)
-    finally:
-        _pipeline_ops_lock.release()
+        t.start()
+    except Exception:
+        _lora_op_lock.release()
+        with _lora_op_tasks_lock:
+            _lora_op_tasks.pop(task_id, None)
+        raise
+    return {"ok": True, "task_id": task_id, "msg": "LoRA apply started."}
 
 
 @app.post("/api/lora/remove")
 def api_remove_lora():
-    if not _pipeline_ops_lock.acquire(blocking=False):
-        return _busy_response("A model operation is already running.")
+    if not _lora_op_lock.acquire(blocking=False):
+        return _busy_response("A LoRA operation is already running.")
+
+    task_id = uuid.uuid4().hex
+    with _lora_op_tasks_lock:
+        _cleanup_lora_op_tasks_locked()
+        _lora_op_tasks[task_id] = {
+            "state": "running",
+            "msg": "Queued LoRA remove...",
+            "phase": "queued",
+            "progress": 0,
+            "created_at": time.time(),
+        }
+
+    t = threading.Thread(target=_run_lora_remove, args=(task_id,), daemon=True)
     try:
-        return remove_lora()
-    finally:
-        _pipeline_ops_lock.release()
+        t.start()
+    except Exception:
+        _lora_op_lock.release()
+        with _lora_op_tasks_lock:
+            _lora_op_tasks.pop(task_id, None)
+        raise
+    return {"ok": True, "task_id": task_id, "msg": "LoRA remove started."}
+
+
+@app.get("/api/lora/operation/{task_id}")
+def api_lora_operation_status(task_id: str):
+    with _lora_op_tasks_lock:
+        _cleanup_lora_op_tasks_locked()
+        task = _lora_op_tasks.get(task_id)
+        if task is None:
+            return {
+                "state": "done",
+                "msg": "Task not found.",
+                "phase": "done",
+                "progress": 0,
+                "error": "Task not found.",
+            }
+        return {
+            "state": task.get("state", "done"),
+            "msg": task.get("msg", ""),
+            "phase": task.get("phase", ""),
+            "progress": task.get("progress", 0),
+            "error": task.get("error"),
+            "result": task.get("result"),
+        }
 
 
 # ── Validation / Magic prompt ─────────────────────────────────────
@@ -291,10 +505,14 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
         _tasks[task_id]["progress"] = 0
         _tasks[task_id]["total_steps"] = total_steps
 
-        if _pipeline_ops_lock.locked():
-            _tasks[task_id]["msg"] = "Waiting for current model operation..."
+        wait_started = time.time()
+        while not _pipeline_ops_lock.acquire(timeout=1):
+            waited_s = int(time.time() - wait_started)
+            _tasks[task_id]["msg"] = f"Waiting for {_pipeline_op_desc()}... ({waited_s}s)"
 
-        with _pipeline_ops_lock:
+        _set_pipeline_op("generating image")
+        try:
+            _tasks[task_id]["msg"] = f"Preparing pipeline ({width}x{height}, {total_steps} steps)..."
             pipe = get_pipeline()
             if pipe is None:
                 raise RuntimeError("Model not loaded.")
@@ -376,6 +594,9 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
                 lora_name,
                 lora_strength,
             )
+        finally:
+            _clear_pipeline_op()
+            _pipeline_ops_lock.release()
 
         logger.info("Task %s → %s (id=%d, %dx%d, lora=%s)", task_id, filename, image_id, width, height, lora_name or "none")
 
