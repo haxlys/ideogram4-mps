@@ -110,7 +110,7 @@ FastAPI Server (server/main.py, port 8000 by default)
     │           Conditional + Unconditional transformers
     │           VAE autoencoder
     │
-    ├── magic_prompt.py    ← POST /api/magic-prompt → commandcode.ai
+    ├── magic_prompt.py    ← POST /api/magic-prompt → OpenAI-compatible LLM
     │
     ├── config.py          ← env var config (paths, ports, defaults)
     │
@@ -151,7 +151,7 @@ cd webui && pnpm dev -- --port "${IDEOGRAM4_WEBUI_PORT:-5173}"
 ## WebUI features
 
 - **Model Panel** — Load / Unload controls with live status indicator (idle / loading / loaded)
-- **Quick Prompt** — Natural language → structured caption via LLM (MiniMaxAI/MiniMax-M3). Supports text-only and text+image (drag-drop, multi-image). Auto-populates all form fields including style settings.
+- **Quick Prompt** — Natural language → structured caption via configurable OpenAI-compatible LLM provider. Supports hosted providers and local `llama.cpp` servers, text-only and text+image (drag-drop, multi-image). Auto-populates all form fields including style settings.
 - **Caption Editor** — Tabbed interface: structured form (scene, style, composition) or raw JSON, with bidirectional real-time sync
 - **Raw JSON mode** — If raw JSON is present, generation submits that JSON object directly rather than rebuilding it from form fields
 - **Style Settings** — Aesthetics, lighting, medium (photograph / illustration / 3d_render / painting / graphic_design), camera or art style, color palette
@@ -321,9 +321,18 @@ All settings are read from environment variables at import time by `server/confi
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (required) |
-| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `MiniMaxAI/MiniMax-M3` | LLM model for prompt expansion |
-| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `https://api.commandcode.ai/provider/v1` | LLM provider base URL |
+| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (use `local` for local unauthenticated servers) |
+| `IDEOGRAM4_MAGIC_PROMPT_PROVIDER` | `openai_compatible` | Provider behavior: `openai_compatible` or `llama_cpp` |
+| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `local-model` | LLM model for prompt expansion |
+| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `http://127.0.0.1:18082/v1` | LLM provider base URL |
+| `IDEOGRAM4_MAGIC_PROMPT_PROMPT_PROFILE` | provider-specific | Prompt profile: `ideogram_official`, `compact_json`, or `gemma4` |
+| `IDEOGRAM4_MAGIC_PROMPT_RESPONSE_FORMAT` | `off` | Optional structured output request mode; currently `off` or `json_object` |
+| `IDEOGRAM4_MAGIC_PROMPT_TOKEN_PARAM` | `max_tokens` | Token budget parameter name: `max_tokens` or `max_completion_tokens` |
+| `IDEOGRAM4_MAGIC_PROMPT_MANAGED_LLAMA` | — | If truthy, `run.sh` starts and stops a local `llama-server` for Magic Prompt |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_PORT` | `18082` | Managed local `llama-server` port |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL` | — | Managed local GGUF model path |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MMPROJ` | — | Optional managed local multimodal projector GGUF path |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_CTX` | `8192` | Managed local `llama-server` context size |
 | `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
 | `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
 | `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |

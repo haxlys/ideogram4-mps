@@ -34,11 +34,16 @@ WARMUP_STEPS = int(os.environ.get("IDEOGRAM4_WARMUP_STEPS", "2"))
 
 # ── Magic prompt (LLM) ────────────────────────────────────────────
 MAGIC_PROMPT_API_KEY = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_API_KEY", "")
-MAGIC_PROMPT_MODEL = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MODEL", "MiniMaxAI/MiniMax-M3")
-MAGIC_PROMPT_BASE_URL = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_BASE_URL", "https://api.commandcode.ai/provider/v1")
+MAGIC_PROMPT_MODEL = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MODEL", "local-model")
+MAGIC_PROMPT_BASE_URL = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_BASE_URL", "http://127.0.0.1:18082/v1")
 MAGIC_PROMPT_TIMEOUT = float(os.environ.get("IDEOGRAM4_MAGIC_PROMPT_TIMEOUT", "120.0"))
 MAGIC_PROMPT_MAX_TOKENS = int(os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS", "16384"))
 MAGIC_PROMPT_TEMPERATURE = float(os.environ.get("IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE", "1.0"))
+MAGIC_PROMPT_PROVIDER = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_PROVIDER", "").strip().lower()
+MAGIC_PROMPT_PROMPT_PROFILE = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_PROMPT_PROFILE", "").strip().lower()
+MAGIC_PROMPT_RESPONSE_FORMAT = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_RESPONSE_FORMAT", "off").strip().lower()
+MAGIC_PROMPT_TOKEN_PARAM = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_TOKEN_PARAM", "max_tokens").strip()
+MAGIC_PROMPT_LOCAL_LLAMA = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA", "").lower() in {"1", "true", "yes", "on"}
 
 # ── LoRA ──────────────────────────────────────────────────────────
 DEFAULT_LORA_STRENGTH = float(os.environ.get("IDEOGRAM4_LORA_STRENGTH", "0.6"))

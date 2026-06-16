@@ -19,6 +19,29 @@
 - **WebUI** (`webui/`) React + TypeScript + Vite. Proxies `/api/*` to
   `IDEOGRAM4_SERVER_PORT` via `vite.config.ts`.
 
+## Open-source extensibility
+
+This project should be implemented as reusable open-source software, not as a
+single-machine integration. Prefer provider-neutral interfaces, documented
+environment variables, and small adapters over hard-coded model names, absolute
+local paths, private credentials, or assumptions about one user's toolchain.
+
+- Keep defaults conservative and broadly runnable. Optional local/provider
+  integrations must be opt-in, clearly named, and safe to disable.
+- Treat OpenAI-compatible LLMs, local llama.cpp servers, hosted providers, and
+  future prompt expanders as interchangeable backends behind the same API
+  contract whenever practical.
+- Put machine-specific paths, ports, model files, tokens, and tuning knobs in
+  `.env` / `.env.example`; never bake personal filesystem paths or private
+  service details into source code.
+- Design feature additions so unsupported capabilities degrade clearly:
+  text-only should still work when image input, a multimodal projector, or a
+  local server is unavailable.
+- Normalize provider quirks at the boundary, then keep internal caption,
+  generation, storage, and WebUI contracts stable.
+- Document every new integration with the exact environment variables, expected
+  process topology, failure modes, and minimal verification command.
+
 ## Commands
 
 ### One-shot launch (everything)
@@ -89,8 +112,10 @@ delete them.
 Natural language → structured caption via LLM (WebUI Quick Prompt card).
 Server module: `server/magic_prompt.py`. API: `POST /api/magic-prompt`.
 
-Uses `MiniMaxAI/MiniMax-M3` on commandcode.ai (OpenAI-compatible). Supports
-text-only and text+image (multi-image base64) input.
+Uses a configurable OpenAI-compatible LLM provider. Local `llama.cpp` can be
+enabled with `IDEOGRAM4_MAGIC_PROMPT_PROVIDER=llama_cpp`. Supports text-only
+and text+image (multi-image base64) input when the selected provider/model
+supports vision.
 
 Failure modes surface as toast: "Failed to expand prompt: IDEOGRAM4_MAGIC_PROMPT_API_KEY is not set".
 
@@ -101,9 +126,18 @@ All settings are read from environment variables at import time by `server/confi
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (required) |
-| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `MiniMaxAI/MiniMax-M3` | LLM model for prompt expansion |
-| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `https://api.commandcode.ai/provider/v1` | LLM provider base URL |
+| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (use `local` for unauthenticated local servers) |
+| `IDEOGRAM4_MAGIC_PROMPT_PROVIDER` | `openai_compatible` | Provider behavior: `openai_compatible` or `llama_cpp` |
+| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `local-model` | LLM model for prompt expansion |
+| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `http://127.0.0.1:18082/v1` | LLM provider base URL |
+| `IDEOGRAM4_MAGIC_PROMPT_PROMPT_PROFILE` | provider-specific | Prompt profile: `ideogram_official`, `compact_json`, or `gemma4` |
+| `IDEOGRAM4_MAGIC_PROMPT_RESPONSE_FORMAT` | `off` | Optional structured output request mode; currently `off` or `json_object` |
+| `IDEOGRAM4_MAGIC_PROMPT_TOKEN_PARAM` | `max_tokens` | Token budget parameter name: `max_tokens` or `max_completion_tokens` |
+| `IDEOGRAM4_MAGIC_PROMPT_MANAGED_LLAMA` | — | If truthy, `run.sh` starts/stops a local `llama-server` |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_PORT` | `18082` | Managed local `llama-server` port |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL` | — | Managed local GGUF model path |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MMPROJ` | — | Optional managed local multimodal projector GGUF path |
+| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_CTX` | `8192` | Managed local `llama-server` context size |
 | `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
 | `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
 | `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |
