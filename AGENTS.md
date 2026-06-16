@@ -141,17 +141,24 @@ All settings are read from environment variables at import time by `server/confi
 | `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
 | `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
 | `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |
-| `IDEOGRAM4_SERVER_HOST` | `0.0.0.0` | FastAPI bind host |
+| `IDEOGRAM4_SERVER_HOST` | `127.0.0.1` | FastAPI bind host |
 | `IDEOGRAM4_SERVER_PORT` | `8000` | FastAPI listen port |
+| `IDEOGRAM4_WEBUI_HOST` | `127.0.0.1` | Vite WebUI bind host used by `run.sh` |
 | `IDEOGRAM4_WEBUI_PORT` | `5173` | Vite WebUI dev server port used by `run.sh` |
 | `IDEOGRAM4_SERVER_LOG_LEVEL` | `info` | Uvicorn log level |
-| `IDEOGRAM4_CORS_ORIGINS` | `*` | CORS allow-origins |
+| `IDEOGRAM4_CORS_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated CORS allow-origins |
+| `IDEOGRAM4_CORS_ALLOW_CREDENTIALS` | `0` | Whether CORS allows browser credentials |
 | `IDEOGRAM4_MODEL_REPO` | `ideogram-ai/ideogram-4-fp8` | HuggingFace model repo |
+| `IDEOGRAM4_MODEL_REVISION` | — | Optional HuggingFace model revision, tag, branch, or commit SHA |
 | `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default generation preset |
 | `IDEOGRAM4_DEFAULT_FORMAT` | `webp` | Default output format (server) |
 | `IDEOGRAM4_DEFAULT_SEED` | `20260608` | Default generation seed |
 | `IDEOGRAM4_IMAGE_QUALITY_WEBP` | `90` | WebP lossy quality |
 | `IDEOGRAM4_IMAGE_QUALITY_JPEG` | `95` | JPEG lossy quality |
+| `IDEOGRAM4_MIN_IMAGE_SIZE` | `128` | Minimum API generation dimension |
+| `IDEOGRAM4_MAX_IMAGE_SIZE` | `2048` | Maximum API generation dimension |
+| `IDEOGRAM4_IMAGE_SIZE_MULTIPLE` | `16` | Required API dimension multiple |
+| `IDEOGRAM4_MAX_CAPTION_JSON_BYTES` | `262144` | Maximum caption JSON payload size |
 | `IDEOGRAM4_LOG_DIR` | `logs/` | Log output directory |
 | `IDEOGRAM4_DB_PATH` | `server/data/ideogram4.db` | SQLite database path |
 | `IDEOGRAM4_OUTPUT_DIR` | `server/output/` | Generated image output dir |
@@ -160,6 +167,7 @@ All settings are read from environment variables at import time by `server/confi
 | `IDEOGRAM4_WARMUP_SIZE` | `64` | Warmup resolution (width=height) |
 | `IDEOGRAM4_WARMUP_STEPS` | `2` | Warmup step count |
 | `IDEOGRAM4_DB_QUERY_LIMIT` | `50` | Default row limit for DB queries |
+| `IDEOGRAM4_MAX_FORM_JSON_BYTES` | `1048576` | Maximum saved WebUI form payload size |
 
 ## LoRA
 

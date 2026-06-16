@@ -3,9 +3,9 @@
 Load/unload, generation, image persistence, DB — all in one process.
 """
 import base64
+import binascii
 import json
 import logging
-import os
 import resource
 import threading
 import time
@@ -16,16 +16,23 @@ import torch
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from config import (
-    SERVER_HOST, SERVER_PORT, SERVER_LOG_LEVEL, CORS_ORIGINS,
+    SERVER_HOST, SERVER_PORT, SERVER_LOG_LEVEL, CORS_ORIGINS, CORS_ALLOW_CREDENTIALS,
     DEFAULT_PRESET, DEFAULT_SERVER_FORMAT, DEFAULT_SEED,
     IMAGE_QUALITY_WEBP, IMAGE_QUALITY_JPEG,
     MAGIC_PROMPT_MODEL, DEFAULT_LORA_STRENGTH,
+    MIN_IMAGE_SIZE, MAX_IMAGE_SIZE, IMAGE_SIZE_MULTIPLE, MAX_CAPTION_JSON_BYTES,
+    MAGIC_PROMPT_MAX_CHARS, MAGIC_PROMPT_MAX_IMAGES, MAGIC_PROMPT_MAX_IMAGE_BYTES,
+    MAX_FORM_JSON_BYTES,
 )
-from db import init_db, get_images, delete_image, get_prompts, save_prompt, delete_prompt, get_last_form, save_last_form, add_image, OUTPUT_DIR, get_prompt
+from db import (
+    init_db, get_images, get_image, delete_image, get_prompts, save_prompt,
+    delete_prompt, get_last_form, save_last_form, add_image, OUTPUT_DIR,
+    get_prompt, resolve_image_path,
+)
 from logger import get_logger, get_log_file
 from model_daemon import (
     handle_load, handle_unload, handle_status, get_pipeline, is_mps_available,
@@ -37,10 +44,44 @@ logger = get_logger("server")
 
 app = FastAPI(title="Ideogram 4 MPS Server")
 
+
+ALLOWED_PRESETS = {"V4_QUALITY_48", "V4_DEFAULT_20", "V4_TURBO_12"}
+ALLOWED_FORMATS = {"png", "webp", "jpeg"}
+
+
+def _parse_cors_origins(raw: str) -> list[str]:
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _validate_dimension(value: int) -> int:
+    if not MIN_IMAGE_SIZE <= value <= MAX_IMAGE_SIZE:
+        raise ValueError(f"must be between {MIN_IMAGE_SIZE} and {MAX_IMAGE_SIZE}")
+    if value % IMAGE_SIZE_MULTIPLE != 0:
+        raise ValueError(f"must be a multiple of {IMAGE_SIZE_MULTIPLE}")
+    return value
+
+
+def _json_size_bytes(value: object) -> int:
+    return len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+
+
+def _decode_b64_payload(value: str) -> bytes:
+    data = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
+    try:
+        return base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise ValueError("image payload must be valid base64") from e
+
+
+def _normalise_b64_payload(value: str) -> str:
+    data = value.split(",", 1)[1] if value.startswith("data:") and "," in value else value
+    _decode_b64_payload(data)
+    return data
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[CORS_ORIGINS] if CORS_ORIGINS != "*" else ["*"],
-    allow_credentials=True,
+    allow_origins=_parse_cors_origins(CORS_ORIGINS),
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -452,10 +493,37 @@ def api_verify(req: VerifyRequest):
 
 
 class MagicPromptRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(default="", max_length=MAGIC_PROMPT_MAX_CHARS)
     width: int = 1024
     height: int = 1024
     images_b64: list[str] | None = None
+
+    @model_validator(mode="after")
+    def validate_prompt_or_image(self):
+        if not self.prompt.strip() and not self.images_b64:
+            raise ValueError("prompt or at least one image is required")
+        return self
+
+    @field_validator("width", "height")
+    @classmethod
+    def validate_size(cls, value: int) -> int:
+        return _validate_dimension(value)
+
+    @field_validator("images_b64")
+    @classmethod
+    def validate_images(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return value
+        if len(value) > MAGIC_PROMPT_MAX_IMAGES:
+            raise ValueError(f"at most {MAGIC_PROMPT_MAX_IMAGES} images are allowed")
+        normalised = []
+        for image_b64 in value:
+            payload = _normalise_b64_payload(image_b64)
+            if len(base64.b64decode(payload)) > MAGIC_PROMPT_MAX_IMAGE_BYTES:
+                max_mb = MAGIC_PROMPT_MAX_IMAGE_BYTES / (1024 * 1024)
+                raise ValueError(f"each image must be {max_mb:.1f} MB or smaller")
+            normalised.append(payload)
+        return normalised
 
 
 _MAGIC_MODEL = MAGIC_PROMPT_MODEL
@@ -484,6 +552,61 @@ class GenerateRequest(BaseModel):
     seed: int = DEFAULT_SEED
     format: str = DEFAULT_SERVER_FORMAT
     prompt_id: int | None = None
+
+    @field_validator("caption")
+    @classmethod
+    def validate_caption(cls, value: dict) -> dict:
+        if _json_size_bytes(value) > MAX_CAPTION_JSON_BYTES:
+            max_kb = MAX_CAPTION_JSON_BYTES / 1024
+            raise ValueError(f"caption JSON must be {max_kb:.0f} KB or smaller")
+        return value
+
+    @field_validator("width", "height")
+    @classmethod
+    def validate_size(cls, value: int) -> int:
+        return _validate_dimension(value)
+
+    @field_validator("preset")
+    @classmethod
+    def validate_preset(cls, value: str) -> str:
+        if value not in ALLOWED_PRESETS:
+            raise ValueError(f"preset must be one of: {', '.join(sorted(ALLOWED_PRESETS))}")
+        return value
+
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, value: str) -> str:
+        value = value.lower()
+        if value not in ALLOWED_FORMATS:
+            raise ValueError(f"format must be one of: {', '.join(sorted(ALLOWED_FORMATS))}")
+        return value
+
+
+class PromptSaveRequest(BaseModel):
+    hld: str = Field(default="", max_length=12000)
+    form_json: str = Field(max_length=MAX_FORM_JSON_BYTES)
+
+    @field_validator("form_json")
+    @classmethod
+    def validate_form_json(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > MAX_FORM_JSON_BYTES:
+            max_kb = MAX_FORM_JSON_BYTES / 1024
+            raise ValueError(f"form JSON must be {max_kb:.0f} KB or smaller")
+        json.loads(value)
+        return value
+
+
+class LastFormRequest(BaseModel):
+    form_json: str = Field(max_length=MAX_FORM_JSON_BYTES)
+
+    @field_validator("form_json")
+    @classmethod
+    def validate_form_json(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > MAX_FORM_JSON_BYTES:
+            max_kb = MAX_FORM_JSON_BYTES / 1024
+            raise ValueError(f"form JSON must be {max_kb:.0f} KB or smaller")
+        json.loads(value)
+        return value
 
 
 def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: str, seed: int, fmt: str = "webp"):
@@ -589,7 +712,7 @@ def _run_generate(task_id: str, caption: dict, width: int, height: int, preset: 
 
             image_id = add_image(
                 hld_text, width, height, preset, seed,
-                str(filepath),
+                filename,
                 _tasks[task_id].get("prompt_id"),
                 lora_name,
                 lora_strength,
@@ -698,10 +821,8 @@ def api_task_status(task_id: str):
 
 @app.get("/outputs/{path:path}")
 def serve_output(path: str):
-    from fastapi.responses import FileResponse
-    import os
-    full = os.path.join("outputs", path)
-    if os.path.isfile(full):
+    full = resolve_image_path(path)
+    if full and full.is_file():
         return FileResponse(full)
     return {"error": "not found"}
 
@@ -713,20 +834,6 @@ def api_get_images(prompt_id: int | None = None):
     return get_images(prompt_id=prompt_id)
 
 
-@app.post("/api/images")
-def api_add_image(req: dict):
-    class AddReq(BaseModel):
-        hld: str = ""
-        width: int = 1024
-        height: int = 1024
-        preset: str = "V4_QUALITY_48"
-        seed: int = 0
-        file_path: str
-    body = AddReq(**req)
-    img_id = add_image(body.hld, body.width, body.height, body.preset, body.seed, body.file_path)
-    return {"id": img_id}
-
-
 @app.delete("/api/images/{image_id}")
 def api_delete_image(image_id: int):
     ok = delete_image(image_id)
@@ -735,14 +842,11 @@ def api_delete_image(image_id: int):
 
 @app.get("/api/images/{image_id}/file")
 def api_serve_image(image_id: int):
-    rows = get_images()
-    for r in rows:
-        if r.get("id") == image_id:
-            from fastapi.responses import FileResponse
-            path = r["file_path"]
-            import os
-            if os.path.isfile(path):
-                return FileResponse(path)
+    row = get_image(image_id)
+    if row:
+        path = resolve_image_path(row["file_path"])
+        if path and path.is_file():
+            return FileResponse(path)
     return {"error": "not found"}
 
 
@@ -762,11 +866,7 @@ def api_get_single_prompt(prompt_id: int):
 
 
 @app.post("/api/prompts")
-def api_save_prompt(req: dict):
-    class PReq(BaseModel):
-        hld: str
-        form_json: str
-    body = PReq(**req)
+def api_save_prompt(body: PromptSaveRequest):
     pid = save_prompt(body.hld, body.form_json)
     return {"id": pid}
 
@@ -786,8 +886,8 @@ def api_get_last_form():
 
 
 @app.post("/api/form")
-def api_save_last_form(req: dict):
-    save_last_form(req["form_json"])
+def api_save_last_form(req: LastFormRequest):
+    save_last_form(req.form_json)
     return {"ok": True}
 
 

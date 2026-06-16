@@ -1,7 +1,5 @@
 # Ideogram 4 on Apple Silicon (MPS)
 
-[![Gallery](https://img.shields.io/badge/Gallery-ideogram4--gallery-blue?style=for-the-badge)](https://ideogram4-gallery-dev.haxlys.workers.dev/)
-
 Run [Ideogram 4](https://huggingface.co/ideogram-ai/ideogram-4-fp8) on a MacBook
 with MPS — no CUDA, no NVIDIA GPU needed.
 
@@ -143,7 +141,7 @@ set -a && source .env && set +a
 python server/main.py
 
 # Terminal 2: WebUI
-cd webui && pnpm dev -- --port "${IDEOGRAM4_WEBUI_PORT:-5173}"
+cd webui && pnpm dev -- --host "${IDEOGRAM4_WEBUI_HOST:-127.0.0.1}" --port "${IDEOGRAM4_WEBUI_PORT:-5173}"
 ```
 
 ![WebUI screenshot](examples/webui-screenshot.png)
@@ -162,7 +160,7 @@ cd webui && pnpm dev -- --port "${IDEOGRAM4_WEBUI_PORT:-5173}"
 - **Prompt History** — Sidebar with persistent URLs (`/history/$promptId`), click to restore form + view result, auto-refresh on generation
 - **Auto-save** — Form state persisted via server API (SQLite) with localStorage fallback
 
-Full WebUI spec: [`docs/WEBUI_SPEC.md`](docs/WEBUI_SPEC.md) (Korean)
+More WebUI notes: [`webui/README.md`](webui/README.md)
 
 ## CLI options
 
@@ -314,6 +312,18 @@ Logs include timestamps, severity level, and structured messages. Set
 The `.log` suffix from generation metadata (`examples/result.log`) is kept in git via
 `.gitignore` exclusion while runtime logs are ignored.
 
+## Local Security Defaults
+
+The WebUI and API are designed for a trusted single-user machine. By default,
+the FastAPI server binds to `127.0.0.1`, CORS is limited to the local Vite
+origins, and image files are only served or deleted when they live inside
+`IDEOGRAM4_OUTPUT_DIR`.
+
+If you intentionally expose the API on a LAN by setting
+`IDEOGRAM4_SERVER_HOST=0.0.0.0`, put it behind your own network controls. The
+API has no user authentication and includes expensive model operations plus
+destructive local actions such as deleting generated images.
+
 ## Configuration
 
 All settings are read from environment variables at import time by `server/config.py`.
@@ -336,17 +346,27 @@ All settings are read from environment variables at import time by `server/confi
 | `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
 | `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
 | `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |
-| `IDEOGRAM4_SERVER_HOST` | `0.0.0.0` | FastAPI bind host |
+| `IDEOGRAM4_MAGIC_PROMPT_MAX_CHARS` | `12000` | Maximum Quick Prompt text length |
+| `IDEOGRAM4_MAGIC_PROMPT_MAX_IMAGES` | `4` | Maximum Quick Prompt image attachments |
+| `IDEOGRAM4_MAGIC_PROMPT_MAX_IMAGE_BYTES` | `6291456` | Maximum decoded bytes per Quick Prompt image |
+| `IDEOGRAM4_SERVER_HOST` | `127.0.0.1` | FastAPI bind host |
 | `IDEOGRAM4_SERVER_PORT` | `8000` | FastAPI listen port |
+| `IDEOGRAM4_WEBUI_HOST` | `127.0.0.1` | Vite WebUI bind host used by `run.sh` |
 | `IDEOGRAM4_WEBUI_PORT` | `5173` | Vite WebUI dev server port used by `run.sh` |
 | `IDEOGRAM4_SERVER_LOG_LEVEL` | `info` | Uvicorn log level |
-| `IDEOGRAM4_CORS_ORIGINS` | `*` | CORS allow-origins |
+| `IDEOGRAM4_CORS_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated CORS allow-origins |
+| `IDEOGRAM4_CORS_ALLOW_CREDENTIALS` | `0` | Whether CORS allows browser credentials |
 | `IDEOGRAM4_MODEL_REPO` | `ideogram-ai/ideogram-4-fp8` | HuggingFace model repo |
+| `IDEOGRAM4_MODEL_REVISION` | — | Optional HuggingFace model revision, tag, branch, or commit SHA |
 | `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default generation preset |
 | `IDEOGRAM4_DEFAULT_FORMAT` | `webp` | Default output format (server) |
 | `IDEOGRAM4_DEFAULT_SEED` | `20260608` | Default generation seed |
 | `IDEOGRAM4_IMAGE_QUALITY_WEBP` | `90` | WebP lossy quality |
 | `IDEOGRAM4_IMAGE_QUALITY_JPEG` | `95` | JPEG lossy quality |
+| `IDEOGRAM4_MIN_IMAGE_SIZE` | `128` | Minimum API generation dimension |
+| `IDEOGRAM4_MAX_IMAGE_SIZE` | `2048` | Maximum API generation dimension |
+| `IDEOGRAM4_IMAGE_SIZE_MULTIPLE` | `16` | Required API dimension multiple |
+| `IDEOGRAM4_MAX_CAPTION_JSON_BYTES` | `262144` | Maximum caption JSON payload size |
 | `IDEOGRAM4_LOG_DIR` | `logs/` | Log output directory |
 | `IDEOGRAM4_DB_PATH` | `server/data/ideogram4.db` | SQLite database path |
 | `IDEOGRAM4_OUTPUT_DIR` | `server/output/` | Generated image output dir |
@@ -355,6 +375,7 @@ All settings are read from environment variables at import time by `server/confi
 | `IDEOGRAM4_WARMUP_SIZE` | `64` | Warmup resolution (width=height) |
 | `IDEOGRAM4_WARMUP_STEPS` | `2` | Warmup step count |
 | `IDEOGRAM4_DB_QUERY_LIMIT` | `50` | Default row limit for DB queries |
+| `IDEOGRAM4_MAX_FORM_JSON_BYTES` | `1048576` | Maximum saved WebUI form payload size |
 
 - Apple Silicon Mac (M1/M2/M3/M4/M5)
 - Python 3.11+ with pip

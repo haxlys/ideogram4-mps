@@ -14,7 +14,7 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 os.environ.setdefault("PYTORCH_MPS_FAST_MATH", "1")
 
 from config import (
-    MODEL_REPO, MODEL_DEVICE, LORA_DIR, WARMUP_SIZE, WARMUP_STEPS,
+    MODEL_REPO, MODEL_REVISION, MODEL_DEVICE, LORA_DIR, WARMUP_SIZE, WARMUP_STEPS,
     DEFAULT_LORA_STRENGTH,
 )
 from logger import get_logger
@@ -45,10 +45,11 @@ _lock = threading.Lock()
 # ── model loading ────────────────────────────────────────────────
 
 def _download_repo(repo_id: str) -> Path:
-    logger.info("Downloading/verifying %s ...", repo_id)
+    revision_label = MODEL_REVISION or "default"
+    logger.info("Downloading/verifying %s @ %s ...", repo_id, revision_label)
     t0 = time.time()
     try:
-        local = snapshot_download(repo_id)
+        local = snapshot_download(repo_id, revision=MODEL_REVISION)
     except Exception as e:
         logger.error("Failed to download %s: %s", repo_id, e)
         raise RuntimeError(f"Failed to download {repo_id}: {e}") from e
@@ -264,6 +265,7 @@ LORA_PRESETS = [
         "id": "realism-v1",
         "label": "Realism V1",
         "repo": "RazzzHF/Realism_Engine_Ideogram_4",
+        "revision": "94305803d895f5ce4a150f45836d71798572f309",
         "filename": "Realism_Engine_Ideogram4_V1.safetensors",
         "local_name": "Realism_Engine_V1.safetensors",
         "default_strength": 0.6,
@@ -272,6 +274,7 @@ LORA_PRESETS = [
         "id": "realism-v2",
         "label": "Realism V2",
         "repo": "RazzzHF/Realism_Engine_Ideogram_4",
+        "revision": "94305803d895f5ce4a150f45836d71798572f309",
         "filename": "Realism_Engine_Ideogram_V2.safetensors",
         "local_name": "Realism_Engine_Ideogram_V2.safetensors",
         "default_strength": 0.6,
@@ -280,6 +283,7 @@ LORA_PRESETS = [
         "id": "realism-v3",
         "label": "Realism V3",
         "repo": "RazzzHF/Realism_Engine_Ideogram_4",
+        "revision": "94305803d895f5ce4a150f45836d71798572f309",
         "filename": "Realism_Engine_Ideogram_V3.safetensors",
         "local_name": "Realism_Engine_Ideogram_V3.safetensors",
         "default_strength": 0.6,
@@ -288,6 +292,7 @@ LORA_PRESETS = [
         "id": "zjourney-v1",
         "label": "zjourney V1",
         "repo": "tsolful/zjourney-Ideogram-4-Fantasy-Realism-Refiner",
+        "revision": "469c3e884cf2d7897744c8f5f7f6e948db996f95",
         "filename": "zjourneyv1.safetensors",
         "local_name": "zjourneyv1.safetensors",
         "default_strength": 0.5,
@@ -296,6 +301,7 @@ LORA_PRESETS = [
         "id": "zjourney-v2",
         "label": "zjourney V2",
         "repo": "tsolful/zjourney-Ideogram-4-Fantasy-Realism-Refiner",
+        "revision": "469c3e884cf2d7897744c8f5f7f6e948db996f95",
         "filename": "zjourneyv2.safetensors",
         "local_name": "zjourneyv2.safetensors",
         "default_strength": 0.55,
@@ -373,6 +379,7 @@ def get_lora_presets() -> list[dict]:
             loras.append({
                 "name": local_name,
                 "repo": item.get("repo"),
+                "revision": item.get("revision"),
                 "filename": item.get("filename"),
                 "strength": item["default_strength"],
                 "installed": installed,
@@ -411,12 +418,20 @@ def download_lora_preset(preset_id: str) -> list[dict]:
             continue
 
         repo = item.get("repo")
+        revision = item.get("revision")
         filename = item.get("filename")
         if not repo or not filename:
             raise ValueError(f"LoRA preset cannot be downloaded: {local_name}")
 
-        logger.info("Downloading LoRA %s from %s:%s", local_name, repo, filename)
-        downloaded_path = Path(hf_hub_download(repo_id=repo, filename=filename, local_dir=str(LORA_DIR)))
+        logger.info("Downloading LoRA %s from %s:%s @ %s", local_name, repo, filename, revision or "default")
+        downloaded_path = Path(
+            hf_hub_download(
+                repo_id=repo,
+                filename=filename,
+                revision=revision,
+                local_dir=str(LORA_DIR),
+            )
+        )
         if downloaded_path.name != local_name:
             downloaded_path.replace(target)
 

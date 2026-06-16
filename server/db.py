@@ -1,8 +1,5 @@
 import sqlite3
-import json
-import os
 from pathlib import Path
-from datetime import datetime, timezone
 
 from config import DB_PATH as _CFG_DB_PATH
 from config import OUTPUT_DIR as _CFG_OUTPUT_DIR
@@ -10,6 +7,7 @@ from config import DB_QUERY_LIMIT as _CFG_QUERY_LIMIT
 
 DB_PATH: Path = _CFG_DB_PATH
 OUTPUT_DIR: Path = _CFG_OUTPUT_DIR
+IMAGE_SUFFIXES = {".png", ".webp", ".jpeg", ".jpg"}
 
 
 def _conn() -> sqlite3.Connection:
@@ -18,6 +16,52 @@ def _conn() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _output_root() -> Path:
+    return OUTPUT_DIR.resolve()
+
+
+def normalize_image_path_for_storage(file_path: str | Path) -> str:
+    path = Path(file_path)
+    root = _output_root()
+    if path.is_absolute():
+        resolved = path.resolve()
+        if resolved != root and root not in resolved.parents:
+            raise ValueError("Image path must be inside IDEOGRAM4_OUTPUT_DIR.")
+        path = resolved.relative_to(root)
+
+    if len(path.parts) != 1 or path.name in {"", ".", ".."} or path.suffix.lower() not in IMAGE_SUFFIXES:
+        raise ValueError("Image path must be a generated image filename.")
+    return path.name
+
+
+def resolve_image_path(file_path: str | Path) -> Path | None:
+    try:
+        name = normalize_image_path_for_storage(file_path)
+    except ValueError:
+        return None
+    path = (_output_root() / name).resolve()
+    root = _output_root()
+    if path != root and root in path.parents:
+        return path
+    return None
+
+
+def _delete_image_file(file_path: str | Path) -> None:
+    path = resolve_image_path(file_path)
+    if path and path.is_file():
+        path.unlink()
+
+
+def _public_image_row(row: sqlite3.Row) -> dict:
+    data = dict(row)
+    path = resolve_image_path(data["file_path"])
+    if path:
+        data["file_path"] = path.name
+    else:
+        data["file_path"] = ""
+    return data
 
 
 def init_db(db_path: str | None = None, output_dir: str | None = None):
@@ -74,10 +118,11 @@ def init_db(db_path: str | None = None, output_dir: str | None = None):
 
 
 def add_image(hld: str, width: int, height: int, preset: str, seed: int, file_path: str, prompt_id: int | None = None, lora_name: str | None = None, lora_strength: float | None = None) -> int:
+    stored_path = normalize_image_path_for_storage(file_path)
     conn = _conn()
     cur = conn.execute(
         "INSERT INTO images (hld, width, height, preset, seed, file_path, prompt_id, lora_name, lora_strength) VALUES (?,?,?,?,?,?,?,?,?)",
-        (hld, width, height, preset, seed, file_path, prompt_id, lora_name, lora_strength),
+        (hld, width, height, preset, seed, stored_path, prompt_id, lora_name, lora_strength),
     )
     conn.commit()
     image_id = cur.lastrowid
@@ -96,7 +141,14 @@ def get_images(limit: int = _CFG_QUERY_LIMIT, prompt_id: int | None = None) -> l
             "SELECT * FROM images ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_public_image_row(r) for r in rows]
+
+
+def get_image(image_id: int) -> dict | None:
+    conn = _conn()
+    row = conn.execute("SELECT * FROM images WHERE id = ?", (image_id,)).fetchone()
+    conn.close()
+    return _public_image_row(row) if row else None
 
 
 def delete_image(image_id: int) -> bool:
@@ -109,8 +161,7 @@ def delete_image(image_id: int) -> bool:
     conn.execute("DELETE FROM images WHERE id = ?", (image_id,))
     conn.commit()
     conn.close()
-    if os.path.exists(fp):
-        os.remove(fp)
+    _delete_image_file(fp)
     return True
 
 
@@ -118,8 +169,7 @@ def delete_all_images():
     conn = _conn()
     rows = conn.execute("SELECT file_path FROM images").fetchall()
     for r in rows:
-        if os.path.exists(r["file_path"]):
-            os.remove(r["file_path"])
+        _delete_image_file(r["file_path"])
     conn.execute("DELETE FROM images")
     conn.commit()
     conn.close()
@@ -157,8 +207,7 @@ def delete_prompt(prompt_id: int) -> bool:
     conn = _conn()
     rows = conn.execute("SELECT file_path FROM images WHERE prompt_id = ?", (prompt_id,)).fetchall()
     for r in rows:
-        if os.path.exists(r["file_path"]):
-            os.remove(r["file_path"])
+        _delete_image_file(r["file_path"])
     conn.execute("DELETE FROM images WHERE prompt_id = ?", (prompt_id,))
     conn.execute("DELETE FROM prompts WHERE id = ?", (prompt_id,))
     conn.commit()

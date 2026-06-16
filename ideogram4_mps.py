@@ -68,6 +68,7 @@ from server.config import (
     DEFAULT_LORA_STRENGTH,
     IMAGE_QUALITY_JPEG,
     MODEL_REPO,
+    MODEL_REVISION,
     WARMUP_SIZE,
     WARMUP_STEPS,
 )
@@ -75,13 +76,13 @@ from server.config import (
 FP8_DTYPE = torch.float8_e4m3fn
 
 
-def download_repo(repo_id: str) -> Path:
+def download_repo(repo_id: str, revision: str | None = None) -> Path:
     from huggingface_hub import snapshot_download
     logger = _get_logger()
-    logger.info("Downloading/verifying %s ...", repo_id)
+    logger.info("Downloading/verifying %s @ %s ...", repo_id, revision or "default")
     t0 = time.time()
     try:
-        local = snapshot_download(repo_id)
+        local = snapshot_download(repo_id, revision=revision)
     except Exception as e:
         logger.error("Failed to download %s", repo_id)
         logger.error("  %s", e)
@@ -223,6 +224,12 @@ def main():
         help=f"HuggingFace repo ID (default: {MODEL_REPO})",
     )
     parser.add_argument(
+        "--revision",
+        type=str,
+        default=MODEL_REVISION,
+        help="HuggingFace model revision, tag, branch, or commit SHA",
+    )
+    parser.add_argument(
         "--width",
         type=int,
         default=None,
@@ -271,7 +278,7 @@ def main():
     device = torch.device("mps")
     logger.info("Ideogram 4 MPS  |  Torch %s", torch.__version__)
 
-    snapshot = download_repo(args.repo)
+    snapshot = download_repo(args.repo, args.revision)
 
     if args.prompt_file:
         prompt = args.prompt_file.read_text().strip()

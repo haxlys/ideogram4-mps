@@ -5,14 +5,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+
+def _truthy_env(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
 # ── Server ────────────────────────────────────────────────────────
-SERVER_HOST = os.environ.get("IDEOGRAM4_SERVER_HOST", "0.0.0.0")
+WEBUI_PORT = int(os.environ.get("IDEOGRAM4_WEBUI_PORT", "5173"))
+SERVER_HOST = os.environ.get("IDEOGRAM4_SERVER_HOST", "127.0.0.1")
 SERVER_PORT = int(os.environ.get("IDEOGRAM4_SERVER_PORT", "8000"))
 SERVER_LOG_LEVEL = os.environ.get("IDEOGRAM4_SERVER_LOG_LEVEL", "info")
-CORS_ORIGINS = os.environ.get("IDEOGRAM4_CORS_ORIGINS", "*")
+CORS_ORIGINS = os.environ.get(
+    "IDEOGRAM4_CORS_ORIGINS",
+    f"http://127.0.0.1:{WEBUI_PORT},http://localhost:{WEBUI_PORT}",
+)
+CORS_ALLOW_CREDENTIALS = _truthy_env("IDEOGRAM4_CORS_ALLOW_CREDENTIALS")
 
 # ── Model ─────────────────────────────────────────────────────────
 MODEL_REPO = os.environ.get("IDEOGRAM4_MODEL_REPO", "ideogram-ai/ideogram-4-fp8")
+MODEL_REVISION = os.environ.get("IDEOGRAM4_MODEL_REVISION", "").strip() or None
 MODEL_DEVICE = "mps"
 
 # ── Paths ─────────────────────────────────────────────────────────
@@ -27,6 +40,10 @@ DEFAULT_SERVER_FORMAT = os.environ.get("IDEOGRAM4_DEFAULT_FORMAT", "webp")
 DEFAULT_SEED = int(os.environ.get("IDEOGRAM4_DEFAULT_SEED", "20260608"))
 IMAGE_QUALITY_WEBP = int(os.environ.get("IDEOGRAM4_IMAGE_QUALITY_WEBP", "90"))
 IMAGE_QUALITY_JPEG = int(os.environ.get("IDEOGRAM4_IMAGE_QUALITY_JPEG", "95"))
+MIN_IMAGE_SIZE = int(os.environ.get("IDEOGRAM4_MIN_IMAGE_SIZE", "128"))
+MAX_IMAGE_SIZE = int(os.environ.get("IDEOGRAM4_MAX_IMAGE_SIZE", "2048"))
+IMAGE_SIZE_MULTIPLE = int(os.environ.get("IDEOGRAM4_IMAGE_SIZE_MULTIPLE", "16"))
+MAX_CAPTION_JSON_BYTES = int(os.environ.get("IDEOGRAM4_MAX_CAPTION_JSON_BYTES", str(256 * 1024)))
 
 # ── Warmup ────────────────────────────────────────────────────────
 WARMUP_SIZE = int(os.environ.get("IDEOGRAM4_WARMUP_SIZE", "64"))
@@ -43,7 +60,13 @@ MAGIC_PROMPT_PROVIDER = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_PROVIDER", "").st
 MAGIC_PROMPT_PROMPT_PROFILE = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_PROMPT_PROFILE", "").strip().lower()
 MAGIC_PROMPT_RESPONSE_FORMAT = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_RESPONSE_FORMAT", "off").strip().lower()
 MAGIC_PROMPT_TOKEN_PARAM = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_TOKEN_PARAM", "max_tokens").strip()
-MAGIC_PROMPT_LOCAL_LLAMA = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA", "").lower() in {"1", "true", "yes", "on"}
+MAGIC_PROMPT_LOCAL_LLAMA = _truthy_env("IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA")
+MAGIC_PROMPT_MAX_CHARS = int(os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MAX_CHARS", "12000"))
+MAGIC_PROMPT_MAX_IMAGES = int(os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MAX_IMAGES", "4"))
+MAGIC_PROMPT_MAX_IMAGE_BYTES = int(os.environ.get("IDEOGRAM4_MAGIC_PROMPT_MAX_IMAGE_BYTES", str(6 * 1024 * 1024)))
+
+# ── API payload limits ─────────────────────────────────────────────
+MAX_FORM_JSON_BYTES = int(os.environ.get("IDEOGRAM4_MAX_FORM_JSON_BYTES", str(1024 * 1024)))
 
 # ── LoRA ──────────────────────────────────────────────────────────
 DEFAULT_LORA_STRENGTH = float(os.environ.get("IDEOGRAM4_LORA_STRENGTH", "0.6"))

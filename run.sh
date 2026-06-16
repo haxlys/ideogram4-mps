@@ -14,6 +14,7 @@ fi
 
 SERVER_PORT="${IDEOGRAM4_SERVER_PORT:-8000}"
 WEBUI_PORT="${IDEOGRAM4_WEBUI_PORT:-5173}"
+WEBUI_HOST="${IDEOGRAM4_WEBUI_HOST:-127.0.0.1}"
 MAGIC_LLM_PID=""
 
 is_enabled() {
@@ -160,7 +161,7 @@ echo ""
 $VENV_PYTHON "$ROOT/server/main.py" &
 SERVER_PID=$!
 
-(cd "$ROOT/webui" && $PNPM run dev -- --port "$WEBUI_PORT") &
+(cd "$ROOT/webui" && $PNPM run dev -- --host "$WEBUI_HOST" --port "$WEBUI_PORT") &
 WEBUI_PID=$!
 
 wait $SERVER_PID $WEBUI_PID
