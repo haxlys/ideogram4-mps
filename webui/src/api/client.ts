@@ -7,7 +7,7 @@ interface LoadResponse {
   msg?: string;
 }
 
-interface GenerateRequest {
+export interface GenerateRequest {
   caption: object;
   width: number;
   height: number;
@@ -15,6 +15,16 @@ interface GenerateRequest {
   seed: number;
   format: string;
   prompt_id?: number | null;
+}
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
 }
 
 interface GenerateResponse {
@@ -35,6 +45,13 @@ interface TaskStatusResponse {
   image?: TaskImage | null;
   progress?: number;
   total_steps?: number;
+  error?: string;
+  cancelled?: boolean;
+}
+
+interface CancelTaskResponse {
+  ok: boolean;
+  msg?: string;
 }
 
 interface VerifyResponse {
@@ -77,7 +94,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     } catch {
       // Keep the generic HTTP message if the response is not JSON.
     }
-    throw new Error(msg);
+    throw new ApiError(res.status, msg);
   }
   return res.json();
 }
@@ -104,6 +121,10 @@ export async function submitGenerate(data: GenerateRequest) {
 
 export async function getTaskStatus(taskId: string) {
   return request<TaskStatusResponse>(`/api/status/${taskId}`);
+}
+
+export async function cancelTask(taskId: string) {
+  return request<CancelTaskResponse>(`/api/cancel/${taskId}`, { method: "POST" });
 }
 
 export async function verifyCaption(caption: object) {

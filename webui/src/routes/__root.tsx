@@ -3,7 +3,8 @@ import { createRootRoute, Link, Outlet, useNavigate } from "@tanstack/react-rout
 import { useAppState } from "@/state/context";
 import { DEFAULT_FORM } from "@/state/types";
 import { ModelPanel } from "@/components/ModelPanel";
-import { StatusOverlay } from "@/components/StatusOverlay";
+import { GenerationQueuePanel } from "@/components/GenerationQueuePanel";
+import { useGenerationQueue } from "@/hooks/useGenerationQueue";
 import { PromptHistory } from "@/components/PromptHistory";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -18,6 +19,8 @@ function RootLayout() {
   const { dispatch } = useAppState();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const navigate = useNavigate();
+
+  useGenerationQueue();
 
   const handleCreateNew = () => {
     dispatch({ type: "RESTORE_FORM", form: DEFAULT_FORM, promptId: undefined });
@@ -103,7 +106,7 @@ function RootLayout() {
             <Outlet />
           </main>
 
-          <StatusOverlay />
+          <GenerationQueuePanel />
           <Toaster richColors theme="light" />
         </div>
       </div>

@@ -477,6 +477,12 @@ def api_generate(req: GenerateRequest):
     return result
 
 
+@app.post("/api/cancel/{task_id}")
+def api_cancel_task(task_id: str):
+    logger.info("Cancel requested for task %s", task_id)
+    return _daemon_json("POST", f"/cancel/{task_id}", timeout=5)
+
+
 @app.get("/api/status/{task_id}")
 def api_task_status(task_id: str):
     with _tasks_lock:
@@ -519,6 +525,8 @@ def api_task_status(task_id: str):
         "image": image,
         "progress": daemon_status.get("progress", 0),
         "total_steps": daemon_status.get("total_steps", 0),
+        "error": daemon_status.get("error"),
+        "cancelled": daemon_status.get("cancelled", False),
     }
 
 

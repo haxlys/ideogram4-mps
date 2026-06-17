@@ -1,3 +1,5 @@
+import type { GenerateRequest } from "@/api/client";
+
 export type ModelState = "idle" | "loading" | "loaded";
 
 export type Medium = "photograph" | "illustration" | "3d_render" | "painting" | "graphic_design";
@@ -29,16 +31,6 @@ export interface FormState {
   rawJson: string;
 }
 
-export type GenStatus = "idle" | "submitting" | "running" | "done" | "error";
-
-export interface UIState {
-  genStatus: GenStatus;
-  genStatusMsg: string;
-  taskId: string | null;
-  progress: number;
-  totalSteps: number;
-}
-
 export interface ImageEntry {
   id: number;
   url: string;
@@ -46,6 +38,32 @@ export interface ImageEntry {
   time: string;
   prompt_id?: number | null;
 }
+
+export type GenJobStatus =
+  | "queued"
+  | "submitting"
+  | "running"
+  | "cancelling"
+  | "done"
+  | "error"
+  | "cancelled";
+
+export interface GenJob {
+  id: string;
+  promptId: number;
+  label: string;
+  status: GenJobStatus;
+  msg: string;
+  progress: number;
+  totalSteps: number;
+  createdAt: number;
+  taskId?: string;
+  request: GenerateRequest;
+  result?: ImageEntry;
+  error?: string;
+}
+
+export const MAX_GEN_QUEUE_SIZE = 20;
 
 export interface PromptEntry extends FormState {
   _savedAt: string;
@@ -59,7 +77,13 @@ export type AppAction =
   | { type: "ADD_ELEMENT" }
   | { type: "REMOVE_ELEMENT"; index: number }
   | { type: "UPDATE_ELEMENT"; index: number; field: keyof FormElement; value: string }
-  | { type: "SET_GEN_STATUS"; status: GenStatus; msg?: string; taskId?: string | null; progress?: number; totalSteps?: number }
+  | { type: "ENQUEUE_JOB"; job: GenJob }
+  | { type: "UPDATE_JOB"; id: string; patch: Partial<Pick<GenJob, "status" | "msg" | "progress" | "totalSteps" | "taskId" | "result" | "error">> }
+  | { type: "REMOVE_JOB"; id: string }
+  | { type: "REORDER_JOB"; id: string; direction: "up" | "down" }
+  | { type: "CLEAR_QUEUED_JOBS" }
+  | { type: "CLEAR_FINISHED_JOBS" }
+  | { type: "SET_QUEUE_EXPANDED"; expanded: boolean }
   | { type: "ADD_IMAGE"; entry: ImageEntry }
   | { type: "SET_IMAGES"; entries: ImageEntry[] }
   | { type: "SHOW_RESULT"; entry: ImageEntry | null }

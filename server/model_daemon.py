@@ -676,11 +676,21 @@ def _cleanup_done_tasks(tasks: dict[str, dict]):
             del tasks[task_id]
 
 
+class GenerationCancelled(Exception):
+    pass
+
+
 def _update_task(task_id: str, **updates):
     with _tasks_lock:
         task = _tasks.get(task_id)
         if task is not None:
             task.update(updates)
+
+
+def _is_task_cancelled(task_id: str) -> bool:
+    with _tasks_lock:
+        task = _tasks.get(task_id)
+        return bool(task and task.get("cancelled"))
 
 
 def _update_lora_op_task(task_id: str, **updates):
@@ -750,6 +760,8 @@ def _run_generate(task_id: str, req: GenerateRequest):
 
         wait_started = time.time()
         while not _pipeline_ops_lock.acquire(timeout=1):
+            if _is_task_cancelled(task_id):
+                raise GenerationCancelled()
             waited_s = int(time.time() - wait_started)
             _update_task(task_id, msg=f"Waiting for {_pipeline_op_desc()}... ({waited_s}s)")
 
@@ -770,6 +782,8 @@ def _run_generate(task_id: str, req: GenerateRequest):
             orig_forward = pipe.unconditional_transformer.forward
 
             def _patched_forward(*args, **kwargs):
+                if _is_task_cancelled(task_id):
+                    raise GenerationCancelled()
                 result = orig_forward(*args, **kwargs)
                 step_count[0] += 1
                 pct = min(int(step_count[0] / total_steps * 100), 99)
@@ -851,6 +865,16 @@ def _run_generate(task_id: str, req: GenerateRequest):
             _clear_pipeline_op()
             _pipeline_ops_lock.release()
 
+    except GenerationCancelled:
+        logger.info("Generation task %s cancelled", task_id)
+        _update_task(
+            task_id,
+            state="done",
+            msg="Cancelled.",
+            error="Cancelled",
+            image_meta=None,
+            done_at=time.time(),
+        )
     except Exception as e:
         logger.exception("Generation task %s failed", task_id)
         _update_task(
@@ -1173,6 +1197,19 @@ def api_generate(req: GenerateRequest):
     return {"task_id": task_id}
 
 
+@app.post("/cancel/{task_id}")
+def api_cancel_task(task_id: str):
+    with _tasks_lock:
+        task = _tasks.get(task_id)
+        if task is None:
+            return JSONResponse(status_code=404, content={"error": "Task not found."})
+        if task.get("state") == "done":
+            return {"ok": True, "msg": "Task already finished."}
+        task["cancelled"] = True
+        task["msg"] = "Cancelling..."
+    return {"ok": True, "msg": "Cancellation requested."}
+
+
 @app.get("/status/{task_id}")
 def api_task_status(task_id: str):
     with _tasks_lock:
@@ -1188,6 +1225,7 @@ def api_task_status(task_id: str):
             "image_meta": task.get("image_meta"),
             "has_artifact": bool(task.get("artifact")),
             "error": task.get("error"),
+            "cancelled": bool(task.get("cancelled")),
         }
 
 

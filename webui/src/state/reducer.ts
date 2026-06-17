@@ -1,15 +1,14 @@
 import type { AppAction, FormState, ImageEntry, ModelState } from "./types";
-import { DEFAULT_FORM } from "./types";
+import { DEFAULT_FORM, MAX_GEN_QUEUE_SIZE } from "./types";
 import { buildCaptionJson, captionToForm } from "@/validation/caption";
+
+import type { GenJob } from "./types";
 
 export interface AppState {
   modelState: ModelState;
   form: FormState;
-  genStatus: import("./types").GenStatus;
-  genStatusMsg: string;
-  taskId: string | null;
-  progress: number;
-  totalSteps: number;
+  genQueue: GenJob[];
+  genQueueExpanded: boolean;
   images: ImageEntry[];
   selectedPreset: string | null;
   resultImage: ImageEntry | null;
@@ -20,11 +19,8 @@ export interface AppState {
 export const initialState: AppState = {
   modelState: "idle",
   form: DEFAULT_FORM,
-  genStatus: "idle",
-  genStatusMsg: "",
-  taskId: null,
-  progress: 0,
-  totalSteps: 0,
+  genQueue: [],
+  genQueueExpanded: false,
   images: [],
   selectedPreset: null,
   resultImage: null,
@@ -94,15 +90,75 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, form };
     }
 
-    case "SET_GEN_STATUS":
+    case "ENQUEUE_JOB":
+      if (state.genQueue.length >= MAX_GEN_QUEUE_SIZE) return state;
       return {
         ...state,
-        genStatus: action.status,
-        genStatusMsg: action.msg ?? "",
-        taskId: action.taskId !== undefined ? action.taskId : state.taskId,
-        progress: action.progress ?? state.progress,
-        totalSteps: action.totalSteps ?? state.totalSteps,
+        genQueue: [...state.genQueue, action.job],
+        genQueueExpanded: true,
       };
+
+    case "UPDATE_JOB":
+      return {
+        ...state,
+        genQueue: state.genQueue.map((job) =>
+          job.id === action.id ? { ...job, ...action.patch } : job,
+        ),
+      };
+
+    case "REMOVE_JOB":
+      return {
+        ...state,
+        genQueue: state.genQueue.filter((job) => job.id !== action.id),
+      };
+
+    case "REORDER_JOB": {
+      const queue = [...state.genQueue];
+      const idx = queue.findIndex((job) => job.id === action.id);
+      if (idx === -1 || queue[idx].status !== "queued") return state;
+
+      let swapIdx = -1;
+      if (action.direction === "up") {
+        for (let i = idx - 1; i >= 0; i--) {
+          if (queue[i].status === "queued") {
+            swapIdx = i;
+            break;
+          }
+        }
+      } else {
+        for (let i = idx + 1; i < queue.length; i++) {
+          if (queue[i].status === "queued") {
+            swapIdx = i;
+            break;
+          }
+        }
+      }
+      if (swapIdx === -1) return state;
+
+      const nextQueue = [...queue];
+      [nextQueue[idx], nextQueue[swapIdx]] = [nextQueue[swapIdx], nextQueue[idx]];
+      return { ...state, genQueue: nextQueue };
+    }
+
+    case "CLEAR_QUEUED_JOBS":
+      return {
+        ...state,
+        genQueue: state.genQueue.filter((job) => job.status !== "queued"),
+      };
+
+    case "CLEAR_FINISHED_JOBS":
+      return {
+        ...state,
+        genQueue: state.genQueue.filter(
+          (job) =>
+            job.status !== "done"
+            && job.status !== "error"
+            && job.status !== "cancelled",
+        ),
+      };
+
+    case "SET_QUEUE_EXPANDED":
+      return { ...state, genQueueExpanded: action.expanded };
 
     case "ADD_IMAGE":
       return {

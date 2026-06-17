@@ -26,7 +26,10 @@ cd ..
 
 ## Runtime Notes
 
-- Generation is local single-slot: one active generation at a time.
+- Generation uses a client-side queue: multiple jobs can be queued, reordered,
+  or cancelled, but the model daemon still runs one generation at a time.
+  Progress and queue status appear in the bottom dock panel without blocking
+  the editor. Running jobs can be cancelled via `POST /api/cancel/{task_id}`.
 - If raw JSON is present in the caption editor, that JSON object is submitted
   directly for generation.
 - Form state uses `useReducer` plus controlled inputs; do not add
