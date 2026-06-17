@@ -31,8 +31,19 @@ export function useModelPolling() {
   }, [checkStatus]);
 
   useEffect(() => {
-    checkStatus();
-  }, [checkStatus]);
+    let cancelled = false;
+
+    void (async () => {
+      const state = await checkStatus();
+      if (!cancelled && state === "loading") {
+        startPolling();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkStatus, startPolling]);
 
   return { startPolling, checkStatus };
 }

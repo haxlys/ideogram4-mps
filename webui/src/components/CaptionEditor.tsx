@@ -22,13 +22,20 @@ import { Info } from "lucide-react";
 
 export function CaptionEditor() {
   const { state, dispatch } = useAppState();
-  const [tab, setTab] = useState<"form" | "json">("form");
+  const [tab, setTab] = useState<"quick" | "form" | "json">("quick");
   const [guideOpen, setGuideOpen] = useState(false);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+          <button
+            type="button"
+            className={"rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors " + (tab === "quick" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+            onClick={() => setTab("quick")}
+          >
+            Quick Prompt
+          </button>
           <button
             type="button"
             className={"rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors " + (tab === "form" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
@@ -63,9 +70,10 @@ export function CaptionEditor() {
         </Tooltip>
       </div>
 
-      {tab === "form" ? (
+      {tab === "quick" ? (
+        <QuickPrompt />
+      ) : tab === "form" ? (
         <div className="space-y-5">
-          <QuickPrompt />
           <SceneDesc />
           <StyleSettings />
           <Composition />

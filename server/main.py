@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 import logging
+import os
 import resource
 import threading
 import time
@@ -13,6 +14,8 @@ import uuid
 from io import BytesIO
 
 import torch
+import requests
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +26,9 @@ from config import (
     SERVER_HOST, SERVER_PORT, SERVER_LOG_LEVEL, CORS_ORIGINS, CORS_ALLOW_CREDENTIALS,
     DEFAULT_PRESET, DEFAULT_SERVER_FORMAT, DEFAULT_SEED,
     IMAGE_QUALITY_WEBP, IMAGE_QUALITY_JPEG,
-    MAGIC_PROMPT_MODEL, DEFAULT_LORA_STRENGTH,
+    MAGIC_PROMPT_API_KEY, MAGIC_PROMPT_MODEL, MAGIC_PROMPT_BASE_URL,
+    MAGIC_PROMPT_PROVIDER, MAGIC_PROMPT_LOCAL_LLAMA, MAGIC_PROMPT_MANAGED_LLAMA,
+    DEFAULT_LORA_STRENGTH,
     MIN_IMAGE_SIZE, MAX_IMAGE_SIZE, IMAGE_SIZE_MULTIPLE, MAX_CAPTION_JSON_BYTES,
     MAGIC_PROMPT_MAX_CHARS, MAGIC_PROMPT_MAX_IMAGES, MAGIC_PROMPT_MAX_IMAGE_BYTES,
     MAX_FORM_JSON_BYTES,
@@ -527,6 +532,80 @@ class MagicPromptRequest(BaseModel):
 
 
 _MAGIC_MODEL = MAGIC_PROMPT_MODEL
+_KEY_OPTIONAL_PROVIDERS = {"openai_compatible", "llama_cpp", "llama-cpp", "llamacpp"}
+
+
+def _is_local_magic_prompt_host(url: str) -> bool:
+    host = urlparse(url).hostname or ""
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _magic_prompt_health_url() -> str:
+    base = MAGIC_PROMPT_BASE_URL.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/health"
+
+
+def _magic_prompt_models_url() -> str:
+    base = MAGIC_PROMPT_BASE_URL.rstrip("/")
+    if not base.endswith("/v1"):
+        base = f"{base}/v1"
+    return f"{base}/models"
+
+
+def _check_magic_prompt_llm(provider: str) -> tuple[bool, str | None]:
+    headers: dict[str, str] = {}
+    if MAGIC_PROMPT_API_KEY:
+        headers["Authorization"] = f"Bearer {MAGIC_PROMPT_API_KEY}"
+
+    if provider in {"llama_cpp", "llama-cpp", "llamacpp"} or _is_local_magic_prompt_host(MAGIC_PROMPT_BASE_URL):
+        try:
+            resp = requests.get(_magic_prompt_health_url(), timeout=3)
+            if resp.status_code == 200:
+                return True, None
+            return False, f"LLM health check returned HTTP {resp.status_code}"
+        except Exception as e:
+            return False, str(e)
+
+    try:
+        resp = requests.get(_magic_prompt_models_url(), headers=headers, timeout=5)
+        if resp.status_code < 500:
+            return True, None
+        return False, f"LLM probe returned HTTP {resp.status_code}"
+    except Exception as e:
+        return False, str(e)
+
+
+@app.get("/api/magic-prompt/status")
+def api_magic_prompt_status():
+    provider = (
+        MAGIC_PROMPT_PROVIDER
+        or ("llama_cpp" if MAGIC_PROMPT_LOCAL_LLAMA or MAGIC_PROMPT_MANAGED_LLAMA else "openai_compatible")
+    )
+    local_llama_enabled = MAGIC_PROMPT_LOCAL_LLAMA or MAGIC_PROMPT_MANAGED_LLAMA
+    missing_env: list[str] = []
+
+    if local_llama_enabled:
+        local_model = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL", "").strip()
+        if not local_model:
+            missing_env.append("IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL")
+    elif provider not in _KEY_OPTIONAL_PROVIDERS and not MAGIC_PROMPT_API_KEY:
+        missing_env.append("IDEOGRAM4_MAGIC_PROMPT_API_KEY")
+
+    llm_reachable, llm_error = _check_magic_prompt_llm(provider) if len(missing_env) == 0 else (False, None)
+
+    return {
+        "configured": len(missing_env) == 0 and llm_reachable,
+        "provider": provider,
+        "model": MAGIC_PROMPT_MODEL,
+        "base_url": MAGIC_PROMPT_BASE_URL,
+        "auth_configured": bool(MAGIC_PROMPT_API_KEY),
+        "managed_local_llama": local_llama_enabled,
+        "missing_env": missing_env,
+        "llm_reachable": llm_reachable,
+        "llm_error": llm_error,
+    }
 
 
 @app.post("/api/magic-prompt")

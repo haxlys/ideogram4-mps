@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import requests
 
@@ -22,13 +23,15 @@ from config import (
     MAGIC_PROMPT_RESPONSE_FORMAT,
     MAGIC_PROMPT_TOKEN_PARAM,
     MAGIC_PROMPT_LOCAL_LLAMA,
+    MAGIC_PROMPT_MANAGED_LLAMA,
+    MAGIC_PROMPT_LOCAL_LLAMA_CTX,
 )
 
 
 def _magic_provider() -> str:
     if MAGIC_PROMPT_PROVIDER:
         return MAGIC_PROMPT_PROVIDER
-    if MAGIC_PROMPT_LOCAL_LLAMA:
+    if MAGIC_PROMPT_LOCAL_LLAMA or MAGIC_PROMPT_MANAGED_LLAMA:
         return "llama_cpp"
     return "openai_compatible"
 
@@ -45,6 +48,26 @@ def _prompt_profile() -> str:
     return "ideogram_official"
 
 
+def _effective_max_tokens() -> int:
+    limit = MAGIC_PROMPT_MAX_TOKENS
+    if _is_llama_cpp_provider() and MAGIC_PROMPT_LOCAL_LLAMA_CTX > 0:
+        cap = max(512, int(MAGIC_PROMPT_LOCAL_LLAMA_CTX * 0.55))
+        limit = min(limit, cap)
+    return limit
+
+
+def _guess_image_mime(data: bytes) -> str:
+    if len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if len(data) >= 6 and data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    return "image/jpeg"
+
+
 def _chat_completion(messages: list[dict], model: str, api_key: str) -> str:
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -58,7 +81,7 @@ def _chat_completion(messages: list[dict], model: str, api_key: str) -> str:
     token_param = MAGIC_PROMPT_TOKEN_PARAM or "max_tokens"
     if token_param not in {"max_tokens", "max_completion_tokens"}:
         raise RuntimeError(f"Unsupported IDEOGRAM4_MAGIC_PROMPT_TOKEN_PARAM: {token_param}")
-    payload[token_param] = MAGIC_PROMPT_MAX_TOKENS
+    payload[token_param] = _effective_max_tokens()
 
     if MAGIC_PROMPT_RESPONSE_FORMAT == "json_object":
         payload["response_format"] = {"type": "json_object"}
@@ -234,14 +257,35 @@ Rules:
 - JSON must parse with json.loads. Quote every key exactly once. No trailing commas.
 """
 
+GEMMA4_SYSTEM_PROMPT = LOCAL_SYSTEM_PROMPT + """
+Additional rules for Gemma multimodal input:
+- When reference images are attached, treat them as primary visual guidance.
+- Mirror subject, palette, and composition cues from attached images unless user text overrides them.
+- Keep JSON compact; prefer shorter string values over verbose prose.
+- Never emit markdown, XML-style tags, or channel tokens in the response.
+"""
+
+
+def _build_messages(prompt: str, aspect_ratio: str, *, has_images: bool = False) -> list[dict]:
+    profile = _prompt_profile()
+    if profile == "gemma4":
+        if has_images:
+            return _build_gemma4_messages(prompt, aspect_ratio)
+        return _build_local_messages(prompt, aspect_ratio)
+    if profile == "compact_json":
+        return _build_local_messages(prompt, aspect_ratio)
+    return _build_augmented_messages(prompt, aspect_ratio)
+
 
 def _build_augmented_messages(prompt: str, aspect_ratio: str) -> list[dict]:
     sections = _load_sections("v1.txt")
     system = sections["system"]
 
     old_contract = "## OUTPUT CONTRACT — exactly three top-level keys, in this order:"
-    new_contract = "## OUTPUT CONTRACT — exactly four top-level keys, in this order:"
-    system = system.replace(old_contract, new_contract)
+    if old_contract in system:
+        system = system.replace(old_contract, OUTPUT_CONTRACT_OVERRIDE.strip())
+    elif OUTPUT_CONTRACT_OVERRIDE.strip() not in system:
+        system += "\n\n" + OUTPUT_CONTRACT_OVERRIDE
 
     old_example = '{"aspect_ratio":"W:H","high_level_description":"...","compositional_deconstruction":{"background":"...","elements":[ ... ]}}'
     new_example = '{"aspect_ratio":"W:H","high_level_description":"...","style_description":{...},"compositional_deconstruction":{"background":"...","elements":[...]}}'
@@ -274,6 +318,17 @@ def _build_local_messages(prompt: str, aspect_ratio: str) -> list[dict]:
     ]
 
 
+def _build_gemma4_messages(prompt: str, aspect_ratio: str) -> list[dict]:
+    user = (
+        f"TARGET IMAGE ASPECT RATIO: {aspect_ratio} (width:height).\n\n"
+        f"USER IDEA:\n{prompt}"
+    )
+    return [
+        {"role": "system", "content": GEMMA4_SYSTEM_PROMPT},
+        {"role": "user", "content": user},
+    ]
+
+
 def expand_prompt(prompt: str, width: int, height: int, images_b64: list[str] | None = None) -> dict:
     api_key = MAGIC_PROMPT_API_KEY
     model = MAGIC_PROMPT_MODEL
@@ -281,12 +336,13 @@ def expand_prompt(prompt: str, width: int, height: int, images_b64: list[str] | 
         raise RuntimeError("IDEOGRAM4_MAGIC_PROMPT_API_KEY is not set")
 
     aspect_ratio = aspect_ratio_from_size(width, height)
-    messages = _build_local_messages(prompt, aspect_ratio) if _prompt_profile() in {"compact_json", "gemma4"} else _build_augmented_messages(prompt, aspect_ratio)
+    messages = _build_messages(prompt, aspect_ratio, has_images=bool(images_b64))
 
     if images_b64:
         content: list[dict] = [{"type": "text", "text": messages[-1]["content"]}]
         for b64 in images_b64:
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+            mime = _guess_image_mime(base64.b64decode(b64))
+            content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
         messages[-1]["content"] = content
 
     raw = _chat_completion(messages, model, api_key)

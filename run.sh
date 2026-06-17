@@ -87,6 +87,29 @@ wait_for_http() {
   return 1
 }
 
+wait_for_model_loaded() {
+  local tries="${1:-300}"
+  local status_url="http://127.0.0.1:${SERVER_PORT}/api/model/status"
+
+  echo "Waiting for Ideogram model to finish auto-loading..."
+  for _ in $(seq 1 "$tries"); do
+    local state
+    state="$(
+      curl -sf "$status_url" 2>/dev/null \
+        | "$VENV_PYTHON" -c 'import sys,json; print(json.load(sys.stdin).get("state",""))' 2>/dev/null \
+        || true
+    )"
+    if [ "$state" = "loaded" ]; then
+      echo "Ideogram model loaded."
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Ideogram model did not finish loading within ${tries}s (may still be loading in background)." >&2
+  return 0
+}
+
 start_magic_llm() {
   if ! should_manage_magic_llm; then
     return
@@ -160,6 +183,9 @@ echo ""
 
 $VENV_PYTHON "$ROOT/server/main.py" &
 SERVER_PID=$!
+
+wait_for_http "http://127.0.0.1:${SERVER_PORT}/api/model/status" "FastAPI server" 60
+wait_for_model_loaded 300
 
 (cd "$ROOT/webui" && $PNPM run dev -- --host "$WEBUI_HOST" --port "$WEBUI_PORT") &
 WEBUI_PID=$!

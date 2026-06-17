@@ -42,13 +42,38 @@ interface VerifyResponse {
   warnings: string[];
 }
 
+const MAGIC_PROMPT_TIMEOUT_MS = 125_000;
+
+function parseApiError(res: Response, body: unknown): string {
+  if (body && typeof body === "object") {
+    if ("error" in body && typeof body.error === "string") {
+      return body.error;
+    }
+    if ("detail" in body) {
+      const detail = (body as { detail: unknown }).detail;
+      if (typeof detail === "string") return detail;
+      if (Array.isArray(detail)) {
+        return detail
+          .map((entry) => {
+            if (entry && typeof entry === "object" && "msg" in entry) {
+              return String(entry.msg);
+            }
+            return String(entry);
+          })
+          .join("; ");
+      }
+    }
+  }
+  return `HTTP ${res.status}: ${res.statusText}`;
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
   if (!res.ok) {
     let msg = `HTTP ${res.status}: ${res.statusText}`;
     try {
       const body = await res.json();
-      if (body.error) msg = body.error;
+      msg = parseApiError(res, body);
     } catch {
       // Keep the generic HTTP message if the response is not JSON.
     }
@@ -94,11 +119,40 @@ interface MagicPromptResponse {
   model: string;
 }
 
+interface MagicPromptStatusResponse {
+  configured: boolean;
+  provider: string;
+  model: string;
+  base_url: string;
+  auth_configured: boolean;
+  managed_local_llama: boolean;
+  missing_env: string[];
+  llm_reachable: boolean;
+  llm_error: string | null;
+}
+
+export async function getMagicPromptStatus() {
+  const res = await fetch("/api/magic-prompt/status");
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}: ${res.statusText}`;
+    try {
+      const body = await res.json();
+      msg = parseApiError(res, body);
+    } catch {
+      // Keep the generic HTTP message if the response is not JSON.
+    }
+    throw new Error(msg);
+  }
+  return res.json() as Promise<MagicPromptStatusResponse>;
+}
+
 export async function magicPrompt(prompt: string, width: number, height: number, imagesB64?: string[] | null) {
   return request<MagicPromptResponse>("/api/magic-prompt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, width, height, images_b64: imagesB64 }),
+    signal: AbortSignal.timeout(MAGIC_PROMPT_TIMEOUT_MS),
   });
 }
 
