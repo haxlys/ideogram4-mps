@@ -32,11 +32,13 @@ width, height, preset, seed, and output format.
 python3 -m venv .venv
 .venv/bin/python -m pip install -r server/requirements.txt
 cd webui && pnpm install
+./run.sh doctor
 ```
 
 `server/requirements.txt` pins `mflux` to PR #445 commit
 `8d80b9cb53688b62a2f814604b9f8b48987c5acd` because the MLXBits q8 loader is not
-in the latest stable mflux release yet.
+in the latest stable mflux release yet. The rollback branch for the previous
+PyTorch/MPS implementation is `legacy/pytorch-mps`.
 
 ## Model Access
 
@@ -66,6 +68,7 @@ personal or research workflows.
 ./run.sh          # model daemon + FastAPI + WebUI
 ./run.sh backend  # restart FastAPI only
 ./run.sh client   # restart Vite only
+./run.sh doctor   # check dependencies, model files, ports, and memory policy
 ```
 
 Manual debugging:
@@ -102,6 +105,12 @@ Generation is single-slot. A second concurrent generation returns HTTP `409`.
 LoRA apply/remove also uses the same model operation lock because mflux applies
 LoRA at model load time.
 
+All MLX/mflux runtime calls are routed through a single worker thread inside the
+model daemon. This avoids MLX thread-local stream failures when a LoRA-loaded
+model is generated after a reload. Do not call `runtime.load`,
+`runtime.apply_loras`, `runtime.remove_loras`, `runtime.generate`, or
+`runtime.unload` directly from request/task threads.
+
 ## Configuration
 
 See `.env.example` for all settings. Common values:
@@ -112,11 +121,29 @@ See `.env.example` for all settings. Common values:
 | `IDEOGRAM4_MODEL_REVISION` | empty | Optional repo revision |
 | `IDEOGRAM4_MODEL_PATH` | empty | Optional local model root containing `split_model.json` |
 | `IDEOGRAM4_MLX_CACHE_LIMIT_GB` | empty | Optional MLX cache limit |
-| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `1` | Load model when daemon starts |
+| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `0` | Load model when daemon starts |
 | `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default sampler preset |
 | `IDEOGRAM4_MIN_IMAGE_SIZE` | `256` | Minimum API dimension |
 | `IDEOGRAM4_MAX_IMAGE_SIZE` | `2048` | Maximum API dimension |
 | `IDEOGRAM4_LORA_DIR` | `models/loras` | Local mflux-compatible LoRA files |
+
+Autoload is off by default so the local Magic Prompt LLM and the image model do
+not immediately compete for unified memory. Use the WebUI Load button or
+`POST /api/model/load` when image generation is needed. Set
+`IDEOGRAM4_MLX_CACHE_LIMIT_GB` when the machine needs a stricter reusable MLX
+cache budget.
+
+## Benchmarks
+
+Use [docs/benchmarks.md](docs/benchmarks.md) for the canonical prompt, seed,
+presets, and metrics. Current local measurements:
+
+| Runtime | Case | Result |
+| --- | --- | --- |
+| PyTorch/MPS legacy | model load | about 285s |
+| MLX q8 | model load | about 2-3s |
+| PyTorch/MPS legacy | 1024x1024 `V4_QUALITY_48`, seed `20260608` | 408.0s |
+| MLX q8 | 1024x1024 `V4_QUALITY_48`, seed `20260608` | 375.1s |
 
 ## Magic Prompt
 

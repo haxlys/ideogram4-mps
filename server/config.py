@@ -35,7 +35,7 @@ CORS_ALLOW_CREDENTIALS = _truthy_env("IDEOGRAM4_CORS_ALLOW_CREDENTIALS")
 MODEL_REPO = os.environ.get("IDEOGRAM4_MODEL_REPO", "MLXBits/ideogram-4-mlx-q8")
 MODEL_REVISION = os.environ.get("IDEOGRAM4_MODEL_REVISION", "").strip() or None
 _MODEL_PATH_RAW = os.environ.get("IDEOGRAM4_MODEL_PATH", "").strip()
-MODEL_DAEMON_AUTOLOAD = _truthy_env("IDEOGRAM4_MODEL_DAEMON_AUTOLOAD", True)
+MODEL_DAEMON_AUTOLOAD = _truthy_env("IDEOGRAM4_MODEL_DAEMON_AUTOLOAD", False)
 
 # ── Paths ─────────────────────────────────────────────────────────
 def _resolve_path(value: str, default: Path) -> Path:

@@ -47,10 +47,12 @@ assumptions.
 ./run.sh full
 ./run.sh backend
 ./run.sh client
+./run.sh doctor
 ```
 
 `backend` restarts only FastAPI and keeps the model daemon warm. `client`
-restarts only Vite. `full` restarts model daemon, FastAPI, and WebUI.
+restarts only Vite. `full` restarts model daemon, FastAPI, and WebUI. `doctor`
+checks local dependencies, model files, LLM paths, ports, and memory policy.
 
 ### Manual debugging
 
@@ -90,7 +92,11 @@ cd webui && pnpm lint
 - Do not reintroduce `torch`, `safetensors.torch`, or direct `ideogram4`
   pipeline imports in runtime code.
 - Generation uses `threading.Thread`, not `asyncio`. MLX work runs in the model
-  daemon process.
+  daemon process, and every `runtime.load`, `runtime.unload`,
+  `runtime.apply_loras`, `runtime.remove_loras`, and `runtime.generate` call
+  must go through the daemon's single `_run_on_mlx_thread` worker. Calling mflux
+  from multiple Python threads can trip MLX thread-local GPU stream errors,
+  especially after LoRA reloads.
 - Generation is local single-slot. Extra `/api/generate` requests return HTTP
   `409`.
 - LoRA support is mflux-native local `.safetensors` only. Apply/remove reloads
@@ -123,22 +129,29 @@ See `.env.example` for all options. Important model settings:
 | `IDEOGRAM4_MODEL_REVISION` | empty | Optional repo revision |
 | `IDEOGRAM4_MODEL_PATH` | empty | Optional local MLX model root |
 | `IDEOGRAM4_MLX_CACHE_LIMIT_GB` | empty | Optional MLX cache limit |
-| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `1` | Auto-load model on daemon startup |
+| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `0` | Auto-load model on daemon startup |
 | `IDEOGRAM4_MIN_IMAGE_SIZE` | `256` | Minimum API generation dimension |
 | `IDEOGRAM4_MAX_IMAGE_SIZE` | `2048` | Maximum API generation dimension |
 | `IDEOGRAM4_LORA_DIR` | `models/loras` | Local mflux-compatible LoRA files |
+
+Keep autoload off by default unless a deployment is dedicated to image
+generation. This avoids immediately reserving roughly 29 GB of unified memory
+while the local Magic Prompt LLM may also be running. Use
+`IDEOGRAM4_MLX_CACHE_LIMIT_GB` for tighter cache behavior on smaller machines.
 
 ## Verification
 
 ```bash
 python3 -m compileall server ideogram4_mlx.py
-rg "torch|safetensors.torch|from ideogram4|import ideogram4" server ideogram4_mlx.py
+python3 scripts/check_mlx_runtime_guardrails.py
 cd webui && pnpm lint
 cd webui && pnpm build
 ```
 
 With model files available, smoke-test `/health`, `/model/load`, `/model/status`,
 and one 256x256 `V4_TURBO_12` generation.
+
+Benchmark comparisons should follow `docs/benchmarks.md`.
 
 ## Unused dependencies
 
