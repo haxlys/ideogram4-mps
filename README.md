@@ -151,13 +151,20 @@ presets, and metrics. Current local measurements:
 
 | Case | PyTorch/MPS legacy | MLX q8 | Difference |
 | --- | --- | --- | --- |
-| Model load, local files ready | about 285s | about 2-3s | MLX loads about 95-143x faster |
+| Model load, local files ready | about 285s | 2.5-4.6s runtime load, 5.3s API-observed smoke | MLX loads about 54-114x faster |
 | 1024x1024 `V4_QUALITY_48`, seed `20260608` | 408.0s | 375.1s | MLX saves 32.9s, about 8.1% faster |
 
 The 1024 benchmark uses the same `examples/caption.json` prompt, preset, seed,
 and output size as the legacy run. The old MPS result is preserved in
 `examples/result.log`; the MLX result was generated with the q8 runtime after
 the model was available locally.
+
+Post-merge `main` smoke produced 256x256 `V4_TURBO_12` images in 8.1-9.7s
+through the FastAPI -> daemon path, including LoRA apply/remove checks. A direct
+local cache-limit pass showed `IDEOGRAM4_MLX_CACHE_LIMIT_GB=2` kept reusable MLX
+cache near 2GB on the 256px turbo smoke; unset cache reached about 5.7GB, and
+`0` eliminated reusable cache. Treat these as local single-run measurements,
+not a cross-machine guarantee.
 
 ## Magic Prompt
 
