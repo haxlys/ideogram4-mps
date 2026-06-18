@@ -2,14 +2,8 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import requests
-
-from ideogram4.magic_prompt import (
-    _load_sections,
-    strip_aspect_ratio_and_bboxes,
-    reorder_caption_keys,
-    aspect_ratio_from_size,
-)
 
 from config import (
     MAGIC_PROMPT_API_KEY,
@@ -26,6 +20,80 @@ from config import (
     MAGIC_PROMPT_MANAGED_LLAMA,
     MAGIC_PROMPT_LOCAL_LLAMA_CTX,
 )
+
+
+def aspect_ratio_from_size(width: int, height: int) -> str:
+    divisor = math.gcd(width, height) or 1
+    return f"{width // divisor}:{height // divisor}"
+
+
+def _load_sections(_filename: str) -> dict[str, str]:
+    return {
+        "system": LOCAL_SYSTEM_PROMPT,
+        "user": "TARGET IMAGE ASPECT RATIO: {{aspect_ratio}} (width:height).\n\n{{original_prompt}}",
+    }
+
+
+def _caption_verifier():
+    from mflux.models.ideogram4.model.ideogram4_text_encoder.caption import Ideogram4CaptionVerifier
+
+    return Ideogram4CaptionVerifier()
+
+
+def verify_caption(caption: dict) -> list[str]:
+    try:
+        return _caption_verifier().verify(caption)
+    except Exception:
+        return []
+
+
+def reorder_caption_keys(caption: dict) -> dict:
+    verifier = _caption_verifier()
+
+    def ordered(value: dict, order) -> dict:
+        known = [key for key in order if key in value]
+        extra = [key for key in value if key not in order]
+        return {key: value[key] for key in (*known, *extra)}
+
+    if not isinstance(caption, dict):
+        return caption
+
+    sd = caption.get("style_description")
+    if isinstance(sd, dict):
+        try:
+            caption["style_description"] = ordered(sd, verifier._style_description_key_order(sd))
+        except Exception:
+            pass
+
+    cd = caption.get("compositional_deconstruction")
+    if isinstance(cd, dict):
+        cd = ordered(cd, verifier.compositional_deconstruction_key_order)
+        elements = cd.get("elements")
+        if isinstance(elements, list):
+            next_elements = []
+            for element in elements:
+                if isinstance(element, dict):
+                    try:
+                        element = ordered(element, verifier._element_key_order(element))
+                    except Exception:
+                        pass
+                next_elements.append(element)
+            cd["elements"] = next_elements
+        caption["compositional_deconstruction"] = cd
+
+    return caption
+
+
+def strip_aspect_ratio_and_bboxes(caption: str, *, strip_bboxes: bool = True) -> str:
+    data = json.loads(caption)
+    data.pop("aspect_ratio", None)
+    if strip_bboxes:
+        elements = data.get("compositional_deconstruction", {}).get("elements", [])
+        if isinstance(elements, list):
+            for element in elements:
+                if isinstance(element, dict):
+                    element.pop("bbox", None)
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
 def _magic_provider() -> str:
@@ -186,11 +254,7 @@ def _normalise_caption(caption: dict) -> dict:
 
 
 def _verify_caption(caption: dict) -> None:
-    try:
-        from ideogram4.caption_verifier import CaptionVerifier
-        warnings = CaptionVerifier().verify(caption)
-    except Exception:
-        return
+    warnings = verify_caption(caption)
     if warnings:
         raise RuntimeError("Magic prompt produced an invalid caption: " + "; ".join(warnings))
 

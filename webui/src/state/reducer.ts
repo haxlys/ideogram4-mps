@@ -1,4 +1,4 @@
-import type { AppAction, FormState, ImageEntry, ModelState } from "./types";
+import type { AppAction, FormState, ImageEntry, ModelState, ModelStatus } from "./types";
 import { DEFAULT_FORM, MAX_GEN_QUEUE_SIZE } from "./types";
 import { buildCaptionJson, captionToForm } from "@/validation/caption";
 
@@ -6,6 +6,7 @@ import type { GenJob } from "./types";
 
 export interface AppState {
   modelState: ModelState;
+  modelStatus: ModelStatus | null;
   form: FormState;
   genQueue: GenJob[];
   genQueueExpanded: boolean;
@@ -18,6 +19,7 @@ export interface AppState {
 
 export const initialState: AppState = {
   modelState: "idle",
+  modelStatus: null,
   form: DEFAULT_FORM,
   genQueue: [],
   genQueueExpanded: false,
@@ -31,7 +33,18 @@ export const initialState: AppState = {
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case "SET_MODEL_STATE":
-      return { ...state, modelState: action.state };
+      return {
+        ...state,
+        modelState: action.state,
+        modelStatus: action.state === "idle"
+          ? null
+          : state.modelStatus
+            ? { ...state.modelStatus, state: action.state }
+            : null,
+      };
+
+    case "SET_MODEL_STATUS":
+      return { ...state, modelState: action.status.state, modelStatus: action.status };
 
     case "SET_FORM": {
       if ("rawJson" in action.form) {

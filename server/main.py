@@ -37,7 +37,7 @@ from logger import get_logger, get_log_file
 
 logger = get_logger("server")
 
-app = FastAPI(title="Ideogram 4 MPS Server")
+app = FastAPI(title="Ideogram 4 MLX Server")
 
 
 ALLOWED_PRESETS = {"V4_QUALITY_48", "V4_DEFAULT_20", "V4_TURBO_12"}
@@ -252,9 +252,9 @@ class VerifyRequest(BaseModel):
 @app.post("/api/verify")
 def api_verify(req: VerifyRequest):
     try:
-        from ideogram4.caption_verifier import CaptionVerifier
-        verifier = CaptionVerifier()
-        warnings = verifier.verify(req.caption)
+        from magic_prompt import verify_caption
+
+        warnings = verify_caption(req.caption)
         return {"valid": len(warnings) == 0, "warnings": warnings}
     except Exception:
         return {"valid": True, "warnings": []}
@@ -296,6 +296,19 @@ class MagicPromptRequest(BaseModel):
 
 _MAGIC_MODEL = MAGIC_PROMPT_MODEL
 _KEY_OPTIONAL_PROVIDERS = {"openai_compatible", "llama_cpp", "llama-cpp", "llamacpp"}
+_MAGIC_PROMPT_ENABLE_ENV_KEYS = {
+    "IDEOGRAM4_MAGIC_PROMPT_API_KEY",
+    "IDEOGRAM4_MAGIC_PROMPT_PROVIDER",
+    "IDEOGRAM4_MAGIC_PROMPT_MODEL",
+    "IDEOGRAM4_MAGIC_PROMPT_BASE_URL",
+    "IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA",
+    "IDEOGRAM4_MAGIC_PROMPT_MANAGED_LLAMA",
+    "IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL",
+}
+
+
+def _magic_prompt_enabled() -> bool:
+    return any(os.environ.get(name, "").strip() for name in _MAGIC_PROMPT_ENABLE_ENV_KEYS)
 
 
 def _is_local_magic_prompt_host(url: str) -> bool:
@@ -346,20 +359,26 @@ def api_magic_prompt_status():
         MAGIC_PROMPT_PROVIDER
         or ("llama_cpp" if MAGIC_PROMPT_LOCAL_LLAMA or MAGIC_PROMPT_MANAGED_LLAMA else "openai_compatible")
     )
+    enabled = _magic_prompt_enabled()
     local_llama_enabled = MAGIC_PROMPT_LOCAL_LLAMA or MAGIC_PROMPT_MANAGED_LLAMA
     missing_env: list[str] = []
 
-    if local_llama_enabled:
+    if not enabled:
+        llm_reachable, llm_error = False, None
+    elif local_llama_enabled:
         local_model = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL", "").strip()
         if not local_model:
             missing_env.append("IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL")
+        llm_reachable, llm_error = _check_magic_prompt_llm(provider) if len(missing_env) == 0 else (False, None)
     elif provider not in _KEY_OPTIONAL_PROVIDERS and not MAGIC_PROMPT_API_KEY:
         missing_env.append("IDEOGRAM4_MAGIC_PROMPT_API_KEY")
-
-    llm_reachable, llm_error = _check_magic_prompt_llm(provider) if len(missing_env) == 0 else (False, None)
+        llm_reachable, llm_error = False, None
+    else:
+        llm_reachable, llm_error = _check_magic_prompt_llm(provider)
 
     return {
-        "configured": len(missing_env) == 0 and llm_reachable,
+        "enabled": enabled,
+        "configured": enabled and len(missing_env) == 0 and llm_reachable,
         "provider": provider,
         "model": MAGIC_PROMPT_MODEL,
         "base_url": MAGIC_PROMPT_BASE_URL,
@@ -376,11 +395,15 @@ def api_magic_prompt(req: MagicPromptRequest):
     logger.info("Magic prompt request: %dx%d", req.width, req.height)
     from magic_prompt import expand_prompt
     try:
+        if not _magic_prompt_enabled():
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Magic Prompt is disabled. Configure IDEOGRAM4_MAGIC_PROMPT_* to enable it."},
+            )
         caption = expand_prompt(req.prompt, req.width, req.height, req.images_b64)
         return {"caption": caption, "model": _MAGIC_MODEL}
     except Exception as e:
         logger.error("Magic prompt failed: %s", str(e))
-        from fastapi.responses import JSONResponse
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 

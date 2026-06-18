@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { AlertCircle, Check, CheckCircle2, Copy, ImageIcon, Plus, Wand2, X } from "lucide-react";
 
 interface MagicPromptStatus {
+  enabled: boolean;
   configured: boolean;
   provider: string;
   model: string;
@@ -160,6 +161,10 @@ export function QuickPrompt() {
       toast.error("Please enter a prompt or attach an image");
       return;
     }
+    if (status && !status.enabled) {
+      toast.error("Magic Prompt is disabled. Configure IDEOGRAM4_MAGIC_PROMPT_* to enable it.");
+      return;
+    }
     if (status && !status.configured) {
       const reason = status.missing_env.length > 0
         ? status.missing_env.join(", ")
@@ -199,7 +204,9 @@ export function QuickPrompt() {
             </p>
             {status ? (
               <p className="text-[12px] leading-5 text-muted-foreground">
-                {status.configured
+                {!status.enabled
+                  ? "Magic Prompt disabled. Configure IDEOGRAM4_MAGIC_PROMPT_* to enable natural-language expansion."
+                  : status.configured
                   ? `Configured: ${status.provider} / ${status.model}`
                   : status.missing_env.length > 0
                     ? `Missing environment: ${status.missing_env.join(", ")}`

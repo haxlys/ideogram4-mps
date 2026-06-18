@@ -185,7 +185,7 @@ export function LoRASelector() {
       type: "SET_LOADING",
       loading: true,
       loadingPreset: preset.id,
-      loraOperation: { msg: "Queued LoRA apply...", phase: "queued", progress: null },
+      loraOperation: { msg: "Queued MLX model reload...", phase: "queued", progress: null },
     });
     try {
       const loras = preset.loras.map((lora) => ({ name: lora.name, strength: lora.strength }));
@@ -195,7 +195,7 @@ export function LoRASelector() {
         await refresh();
         toast.success(result.msg);
       } else {
-        toast.error(res.msg ?? "Failed to start LoRA apply.");
+        toast.error(res.msg ?? "Failed to start LoRA reload.");
       }
     } catch (e) {
       toast.error(String(e));
@@ -234,7 +234,7 @@ export function LoRASelector() {
       type: "SET_LOADING",
       loading: true,
       loadingPreset: null,
-      loraOperation: { msg: "Queued LoRA remove...", phase: "queued", progress: null },
+      loraOperation: { msg: "Queued MLX model reload...", phase: "queued", progress: null },
     });
     try {
       const res = await removeLoraApi();
@@ -243,7 +243,7 @@ export function LoRASelector() {
         await refresh();
         toast.success(result.msg);
       } else {
-        toast.error(res.msg ?? "Failed to start LoRA remove.");
+        toast.error(res.msg ?? "Failed to start LoRA removal.");
       }
     } catch (e) {
       toast.error(String(e));

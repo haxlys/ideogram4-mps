@@ -43,7 +43,7 @@ function RootLayout() {
                   Ideogram 4
                 </h1>
                 <span className="rounded-md bg-foreground px-1 py-px text-[10px] font-bold uppercase text-background leading-none">
-                  MPS
+                  MLX
                 </span>
               </div>
             </div>

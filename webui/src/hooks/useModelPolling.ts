@@ -9,7 +9,7 @@ export function useModelPolling() {
   const checkStatus = useCallback(async () => {
     try {
       const data = await getModelStatus();
-      dispatch({ type: "SET_MODEL_STATE", state: data.state });
+      dispatch({ type: "SET_MODEL_STATUS", status: data });
       return data.state;
     } catch {
       //

@@ -1,6 +1,7 @@
-import type { GenerateRequest } from "@/api/client";
+import type { GenerateRequest, ModelStatus } from "@/api/client";
 
 export type ModelState = "idle" | "loading" | "loaded";
+export type { ModelStatus };
 
 export type Medium = "photograph" | "illustration" | "3d_render" | "painting" | "graphic_design";
 
@@ -73,6 +74,7 @@ export interface PromptEntry extends FormState {
 
 export type AppAction =
   | { type: "SET_MODEL_STATE"; state: ModelState }
+  | { type: "SET_MODEL_STATUS"; status: ModelStatus }
   | { type: "SET_FORM"; form: Partial<FormState> }
   | { type: "RESTORE_FORM"; form: FormState; promptId?: number }
   | { type: "ADD_ELEMENT" }
@@ -123,6 +125,12 @@ export const STEPS_MAP: Record<FormState["preset"], number> = {
   V4_QUALITY_48: 48,
 };
 
+export const MIN_DIMENSION = 256;
+export const MAX_DIMENSION = 2048;
+export const DIMENSION_STEP = 128;
+export const MLX_LOAD_ESTIMATE_SECONDS = 3;
+export const MLX_BASE_1024_QUALITY48_SECONDS = 375;
+
 export function estimateTime(w: number, h: number, steps: number): number {
-  return (w * h) * (350 / (1024 * 1024)) * (steps / 48);
+  return (w * h) * (MLX_BASE_1024_QUALITY48_SECONDS / (1024 * 1024)) * (steps / 48);
 }

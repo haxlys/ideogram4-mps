@@ -32,10 +32,10 @@ CORS_ORIGINS = os.environ.get(
 CORS_ALLOW_CREDENTIALS = _truthy_env("IDEOGRAM4_CORS_ALLOW_CREDENTIALS")
 
 # ── Model ─────────────────────────────────────────────────────────
-MODEL_REPO = os.environ.get("IDEOGRAM4_MODEL_REPO", "ideogram-ai/ideogram-4-fp8")
+MODEL_REPO = os.environ.get("IDEOGRAM4_MODEL_REPO", "MLXBits/ideogram-4-mlx-q8")
 MODEL_REVISION = os.environ.get("IDEOGRAM4_MODEL_REVISION", "").strip() or None
-MODEL_DEVICE = "mps"
-MODEL_DAEMON_AUTOLOAD = _truthy_env("IDEOGRAM4_MODEL_DAEMON_AUTOLOAD", True)
+_MODEL_PATH_RAW = os.environ.get("IDEOGRAM4_MODEL_PATH", "").strip()
+MODEL_DAEMON_AUTOLOAD = _truthy_env("IDEOGRAM4_MODEL_DAEMON_AUTOLOAD", False)
 
 # ── Paths ─────────────────────────────────────────────────────────
 def _resolve_path(value: str, default: Path) -> Path:
@@ -47,6 +47,7 @@ LOG_DIR = _resolve_path(os.environ.get("IDEOGRAM4_LOG_DIR", ""), ROOT / "logs")
 DB_PATH = _resolve_path(os.environ.get("IDEOGRAM4_DB_PATH", ""), ROOT / "server" / "data" / "ideogram4.db")
 OUTPUT_DIR = _resolve_path(os.environ.get("IDEOGRAM4_OUTPUT_DIR", ""), ROOT / "server" / "output")
 LORA_DIR = _resolve_path(os.environ.get("IDEOGRAM4_LORA_DIR", ""), ROOT / "models" / "loras")
+MODEL_PATH = _resolve_path(_MODEL_PATH_RAW, ROOT / _MODEL_PATH_RAW) if _MODEL_PATH_RAW else None
 
 # ── Generation defaults ───────────────────────────────────────────
 DEFAULT_PRESET = os.environ.get("IDEOGRAM4_DEFAULT_PRESET", "V4_QUALITY_48")
@@ -54,14 +55,12 @@ DEFAULT_SERVER_FORMAT = os.environ.get("IDEOGRAM4_DEFAULT_FORMAT", "webp")
 DEFAULT_SEED = int(os.environ.get("IDEOGRAM4_DEFAULT_SEED", "20260608"))
 IMAGE_QUALITY_WEBP = int(os.environ.get("IDEOGRAM4_IMAGE_QUALITY_WEBP", "90"))
 IMAGE_QUALITY_JPEG = int(os.environ.get("IDEOGRAM4_IMAGE_QUALITY_JPEG", "95"))
-MIN_IMAGE_SIZE = int(os.environ.get("IDEOGRAM4_MIN_IMAGE_SIZE", "128"))
+MIN_IMAGE_SIZE = int(os.environ.get("IDEOGRAM4_MIN_IMAGE_SIZE", "256"))
 MAX_IMAGE_SIZE = int(os.environ.get("IDEOGRAM4_MAX_IMAGE_SIZE", "2048"))
 IMAGE_SIZE_MULTIPLE = int(os.environ.get("IDEOGRAM4_IMAGE_SIZE_MULTIPLE", "16"))
 MAX_CAPTION_JSON_BYTES = int(os.environ.get("IDEOGRAM4_MAX_CAPTION_JSON_BYTES", str(256 * 1024)))
-
-# ── Warmup ────────────────────────────────────────────────────────
-WARMUP_SIZE = int(os.environ.get("IDEOGRAM4_WARMUP_SIZE", "64"))
-WARMUP_STEPS = int(os.environ.get("IDEOGRAM4_WARMUP_STEPS", "2"))
+MLX_CACHE_LIMIT_GB_RAW = os.environ.get("IDEOGRAM4_MLX_CACHE_LIMIT_GB", "").strip()
+MLX_CACHE_LIMIT_GB = float(MLX_CACHE_LIMIT_GB_RAW) if MLX_CACHE_LIMIT_GB_RAW else None
 
 # ── Magic prompt (LLM) ────────────────────────────────────────────
 MAGIC_PROMPT_API_KEY = os.environ.get("IDEOGRAM4_MAGIC_PROMPT_API_KEY", "")

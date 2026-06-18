@@ -11,7 +11,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { FormState } from "@/state/types";
-import { STEPS_MAP, estimateTime, RESOLUTION_PRESETS } from "@/state/types";
+import {
+  DIMENSION_STEP,
+  MAX_DIMENSION,
+  MIN_DIMENSION,
+  MLX_LOAD_ESTIMATE_SECONDS,
+  RESOLUTION_PRESETS,
+  STEPS_MAP,
+  estimateTime,
+} from "@/state/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Shuffle } from "lucide-react";
@@ -20,11 +28,12 @@ import { LoRASelector } from "./LoRASelector";
 const PRESETS: FormState["preset"][] = ["V4_TURBO_12", "V4_DEFAULT_20", "V4_QUALITY_48"];
 
 function snap128(n: number): number {
-  n = Math.round(n / 128) * 128;
-  return Math.max(128, Math.min(2048, n));
+  n = Math.round(n / DIMENSION_STEP) * DIMENSION_STEP;
+  return Math.max(MIN_DIMENSION, Math.min(MAX_DIMENSION, n));
 }
 
 function formatTime(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}m ${s}s`;
@@ -61,7 +70,8 @@ export function GenerationSettings() {
   const { form, modelState } = state;
   const steps = STEPS_MAP[form.preset];
   const genTime = estimateTime(form.w, form.h, steps);
-  const totalTime = genTime + (modelState !== "loaded" ? 105 : 0);
+  const loadTime = modelState !== "loaded" ? MLX_LOAD_ESTIMATE_SECONDS : 0;
+  const totalTime = genTime + loadTime;
 
   return (
     <Card>
@@ -138,9 +148,9 @@ export function GenerationSettings() {
             <Input
               id="customW"
               type="number"
-              min={128}
-              max={2048}
-              step={128}
+              min={MIN_DIMENSION}
+              max={MAX_DIMENSION}
+              step={DIMENSION_STEP}
               value={form.w}
               onChange={(e) => {
                 let v = Number(e.target.value);
@@ -154,9 +164,9 @@ export function GenerationSettings() {
             <Input
               id="customH"
               type="number"
-              min={128}
-              max={2048}
-              step={128}
+              min={MIN_DIMENSION}
+              max={MAX_DIMENSION}
+              step={DIMENSION_STEP}
               value={form.h}
               onChange={(e) => {
                 let v = Number(e.target.value);
@@ -237,9 +247,9 @@ export function GenerationSettings() {
         <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2">
           <span className="text-xs text-muted-foreground">Estimated:</span>
           <Badge variant="outline" className="text-xs font-mono">
-            {modelState !== "loaded" ? `load ~105s + gen ${formatTime(genTime)}` : `gen ${formatTime(genTime)}`}
+            {modelState !== "loaded" ? `load ~${formatTime(loadTime)} + gen ${formatTime(genTime)}` : `gen ${formatTime(genTime)}`}
           </Badge>
-          {modelState === "loaded" && (
+          {totalTime > genTime && (
             <span className="text-[11px] text-muted-foreground ml-auto">
               ({formatTime(totalTime)} total)
             </span>

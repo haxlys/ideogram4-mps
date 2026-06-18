@@ -1,228 +1,159 @@
-# AGENTS.md — Ideogram 4 MPS
+# AGENTS.md - Ideogram 4 MLX
 
 ## Architecture
 
-3-process, local-only: **WebUI (:5173 default) → FastAPI (:8000 default) → Model Daemon (:8001 default)**
+3-process, local-only: **WebUI (:5173 default) -> FastAPI (:8000 default) -> Model Daemon (:8001 default)**.
 
-- **Model daemon** (`server/model_daemon.py`) owns the single Ideogram 4 pipeline
-  in MPS memory. It handles model load/unload, LoRA apply/remove/download,
-  generation jobs, progress, and short-lived image artifacts. Keep it single-worker:
-  multiple worker processes would duplicate the huge model.
-- **FastAPI** (`server/main.py`) is the WebUI API gateway. It handles Magic Prompt,
-  request validation, SQLite prompt/image/form persistence, generated image file
-  persistence, and daemon proxying. It must not import or load the Ideogram
-  pipeline directly.
-- **CLI** (`ideogram4_mps.py`) uses the model daemon by default when reachable
-  (`--daemon auto`) and can fall back to direct local loading. Use
-  `--daemon require` when a warm daemon is required, or `--daemon off` for the
-  old standalone path.
-- **Configuration** (`server/config.py`) reads server settings from environment
-  variables at import time. `run.sh` auto-loads `.env` from project root and
-  also reads `IDEOGRAM4_WEBUI_PORT` and `IDEOGRAM4_MODEL_DAEMON_PORT`. Single
-  source of truth for paths, ports, defaults, and tuning parameters.
-- **WebUI** (`webui/`) React + TypeScript + Vite. Proxies `/api/*` to
+- **Model daemon** (`server/model_daemon.py`) owns the single MLX/mflux Ideogram
+  4 runtime. Keep it single-worker: multiple worker processes duplicate the
+  model in unified memory. It handles model load/unload, generation jobs,
+  progress, cancellation, short-lived image artifacts, and local LoRA reloads.
+- **MLX runtime** (`server/mlx_runtime.py`) resolves `IDEOGRAM4_MODEL_PATH` or
+  downloads `IDEOGRAM4_MODEL_REPO`, validates `split_model.json`, instantiates
+  the mflux Ideogram 4 runtime, and reports MLX memory.
+- **FastAPI** (`server/main.py`) is the WebUI gateway and persistence layer. It
+  handles Magic Prompt, request validation, SQLite prompt/image/form
+  persistence, generated image file persistence, and daemon proxying. It must
+  not import or load the model directly.
+- **CLI** (`ideogram4_mlx.py`) uses the model daemon by default when reachable
+  (`--daemon auto`) and can fall back to direct local MLX loading. Use
+  `--daemon require` when a warm daemon is required, or `--daemon off` for
+  standalone local loading.
+- **Configuration** (`server/config.py`) reads settings from environment
+  variables at import time. `run.sh` auto-loads `.env` from project root.
+- **WebUI** (`webui/`) is React + TypeScript + Vite. It proxies `/api/*` to
   `IDEOGRAM4_SERVER_PORT` via `vite.config.ts`.
 
 ## Open-source extensibility
 
-This project should be implemented as reusable open-source software, not as a
-single-machine integration. Prefer provider-neutral interfaces, documented
-environment variables, and small adapters over hard-coded model names, absolute
-local paths, private credentials, or assumptions about one user's toolchain.
+Prefer provider-neutral interfaces, documented environment variables, and small
+adapters over hard-coded local paths, private credentials, or one-machine
+assumptions.
 
-- Keep defaults conservative and broadly runnable. Optional local/provider
-  integrations must be opt-in, clearly named, and safe to disable.
-- Treat OpenAI-compatible LLMs, local llama.cpp servers, hosted providers, and
-  future prompt expanders as interchangeable backends behind the same API
-  contract whenever practical.
+- Keep defaults conservative and broadly runnable.
 - Put machine-specific paths, ports, model files, tokens, and tuning knobs in
-  `.env` / `.env.example`; never bake personal filesystem paths or private
-  service details into source code.
-- Design feature additions so unsupported capabilities degrade clearly:
-  text-only should still work when image input, a multimodal projector, or a
-  local server is unavailable.
+  `.env` / `.env.example`.
+- Unsupported capabilities should degrade clearly. Text-only Magic Prompt
+  should still work when image input or a local multimodal server is absent.
 - Normalize provider quirks at the boundary, then keep internal caption,
   generation, storage, and WebUI contracts stable.
-- Document every new integration with the exact environment variables, expected
-  process topology, failure modes, and minimal verification command.
 
 ## Commands
 
 ### Launch / restart
-```bash
-./run.sh              # full: model daemon + FastAPI server + WebUI
-./run.sh full         # same as above
-./run.sh backend      # FastAPI server only; keeps model daemon and WebUI running
-./run.sh client       # WebUI only; keeps FastAPI server and model daemon running
-```
-`backend` is the normal choice when the model daemon is already loaded and only
-`server/main.py` needs a restart. It does not stop `IDEOGRAM4_MODEL_DAEMON_PORT`.
-`client` only restarts the Vite dev server. `full` stops existing processes on
-configured model daemon/server/webui ports (graceful first, force stop only if
-needed), installs deps, starts model daemon→server→webui, and cleans up on
-SIGINT/SIGTERM/EXIT.
 
-### Manual (debugging — 3 terminals in this order)
 ```bash
-set -a && source .env && set +a  # load env vars
-python server/model_daemon.py    # terminal 1
-python server/main.py            # terminal 2
-cd webui && pnpm dev             # terminal 3
+./run.sh
+./run.sh full
+./run.sh backend
+./run.sh client
+./run.sh doctor
 ```
 
-### CLI generation (no server needed)
+`backend` restarts only FastAPI and keeps the model daemon warm. `client`
+restarts only Vite. `full` restarts model daemon, FastAPI, and WebUI. `doctor`
+checks local dependencies, model files, LLM paths, ports, and memory policy.
+
+### Manual debugging
+
 ```bash
-python ideogram4_mps.py --prompt-file examples/caption.json --out examples/result.png
+set -a && source .env && set +a
+.venv/bin/python server/model_daemon.py
+.venv/bin/python server/main.py
+cd webui && pnpm dev
+```
+
+### CLI generation
+
+```bash
+python3 ideogram4_mlx.py --prompt-file examples/caption.json --out examples/result.png
+python3 ideogram4_mlx.py --daemon off --prompt-file examples/caption.json --out examples/result.png
 ```
 
 ### WebUI-only
+
 ```bash
-cd webui && pnpm dev             # development
-cd webui && pnpm build           # typecheck + production build → dist/
-cd webui && pnpm lint            # ESLint
+cd webui && pnpm dev
+cd webui && pnpm build
+cd webui && pnpm lint
 ```
 
 - Use **pnpm**, not npm/yarn.
-- No tests exist. There is no test command.
+- No backend test suite exists. Use compile/lint/build and manual smoke checks.
 
 ## Critical gotchas
 
-- **`ideogram4` is not on PyPI.** Must install from GitHub:
-  `pip install git+https://github.com/ideogram-oss/ideogram4.git`
-- **Model repo is gated.** Requires HuggingFace account that accepted terms at
-  https://huggingface.co/ideogram-ai/ideogram-4-fp8. Use `hf auth login` (NOT
-  the deprecated `huggingface-cli login`).
-- **`PYTORCH_ENABLE_MPS_FALLBACK=1`** is set automatically in both
-  `ideogram4_mps.py` and `model_daemon.py`. Required for `ndtri` op (MPS
-  doesn't support it). Never override.
-- **`PYTORCH_MPS_FAST_MATH=1`** is set automatically in both
-  `ideogram4_mps.py` and `model_daemon.py`. Enables MPS fast math kernels.
-  Small resolution generation shows ~40% speedup on M4 Pro; large resolution
-  marginal gain. Override with `PYTORCH_MPS_FAST_MATH=0` if numerical issues
-  are suspected.
-- **Apple Silicon only.** M1+ required. ~50 GB unified memory for 1024×1024
-  V4_QUALITY_48. No CUDA/NVIDIA support.
-- **Generation uses `threading.Thread`**, not `asyncio`. The pipeline runs in
-  the model daemon process in a daemon thread. This avoids GIL issues since
-  pytorch operations release the GIL.
-- **Generation is local single-slot.** Only one generation is accepted at a
-  time. Extra `/api/generate` requests return HTTP `409` instead of queuing
-  unbounded work. Completed task status entries are cleaned after ~1 hour.
-- **Raw JSON mode is authoritative.** If `rawJson` is present in WebUI state,
+- Default model is `MLXBits/ideogram-4-mlx-q8`, not the old FP8 runtime repo.
+- The model root must contain `split_model.json`. Use `IDEOGRAM4_MODEL_PATH` for
+  a local directory or `IDEOGRAM4_MODEL_REPO` for Hugging Face download.
+- `mflux` is pinned to PR #445 commit
+  `8d80b9cb53688b62a2f814604b9f8b48987c5acd` until the MLXBits q8 loader lands
+  in a stable mflux release.
+- Do not reintroduce `torch`, `safetensors.torch`, or direct `ideogram4`
+  pipeline imports in runtime code.
+- Generation uses `threading.Thread`, not `asyncio`. MLX work runs in the model
+  daemon process, and every `runtime.load`, `runtime.unload`,
+  `runtime.apply_loras`, `runtime.remove_loras`, and `runtime.generate` call
+  must go through the daemon's single `_run_on_mlx_thread` worker. Calling mflux
+  from multiple Python threads can trip MLX thread-local GPU stream errors,
+  especially after LoRA reloads.
+- Generation is local single-slot. Extra `/api/generate` requests return HTTP
+  `409`.
+- LoRA support is mflux-native local `.safetensors` only. Apply/remove reloads
+  the MLX model with the requested stack instead of patching state dicts.
+- Raw JSON mode is authoritative. If `rawJson` is present in WebUI state,
   generation submits that JSON object directly.
 
 ## Logging
 
-All processes write to `logs/<name>-<timestamp>.log` (gitignored). Flat
-structured format with timestamps. Set `IDEOGRAM4_LOG_DIR` to override path.
-Generation metadata `.log` files (`examples/result.log`) are checked into git — don't
-delete them.
+All processes write to `logs/<name>-<timestamp>.log` (gitignored). Generation
+metadata `.log` files under examples are checked into git; do not delete them
+unless the task explicitly asks.
 
 ## Magic Prompt
 
-Natural language → structured caption via LLM (WebUI Quick Prompt card).
-Server module: `server/magic_prompt.py`. API: `POST /api/magic-prompt`.
+Natural language -> structured caption via LLM. Server module:
+`server/magic_prompt.py`. API: `POST /api/magic-prompt`.
 
 Uses a configurable OpenAI-compatible LLM provider. Local `llama.cpp` can be
-enabled with `IDEOGRAM4_MAGIC_PROMPT_PROVIDER=llama_cpp`. Supports text-only
-and text+image (multi-image base64) input when the selected provider/model
-supports vision.
-
-Failure modes surface as toast: "Failed to expand prompt: IDEOGRAM4_MAGIC_PROMPT_API_KEY is not set".
+enabled with `IDEOGRAM4_MAGIC_PROMPT_PROVIDER=llama_cpp`. Caption verification
+uses mflux's Ideogram 4 caption verifier.
 
 ## Configuration
 
-All settings are read from environment variables at import time by `server/config.py`.
-`run.sh` auto-loads `.env` from the project root. See `.env.example` for all options.
+See `.env.example` for all options. Important model settings:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (use `local` for unauthenticated local servers) |
-| `IDEOGRAM4_MAGIC_PROMPT_PROVIDER` | `openai_compatible` | Provider behavior: `openai_compatible` or `llama_cpp` |
-| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `local-model` | LLM model for prompt expansion |
-| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `http://127.0.0.1:18082/v1` | LLM provider base URL |
-| `IDEOGRAM4_MAGIC_PROMPT_PROMPT_PROFILE` | provider-specific | Prompt profile: `ideogram_official`, `compact_json`, or `gemma4` |
-| `IDEOGRAM4_MAGIC_PROMPT_RESPONSE_FORMAT` | `off` | Optional structured output request mode; currently `off` or `json_object` |
-| `IDEOGRAM4_MAGIC_PROMPT_TOKEN_PARAM` | `max_tokens` | Token budget parameter name: `max_tokens` or `max_completion_tokens` |
-| `IDEOGRAM4_MAGIC_PROMPT_MANAGED_LLAMA` | — | If truthy, `run.sh` starts/stops a local `llama-server` |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_PORT` | `18082` | Managed local `llama-server` port |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL` | — | Managed local GGUF model path |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MMPROJ` | — | Optional managed local multimodal projector GGUF path |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_CTX` | `8192` | Managed local `llama-server` context size |
-| `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
-| `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
-| `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |
-| `IDEOGRAM4_SERVER_HOST` | `127.0.0.1` | FastAPI bind host |
-| `IDEOGRAM4_SERVER_PORT` | `8000` | FastAPI listen port |
-| `IDEOGRAM4_MODEL_DAEMON_HOST` | `127.0.0.1` | Model daemon bind host |
-| `IDEOGRAM4_MODEL_DAEMON_PORT` | `8001` | Model daemon listen port |
-| `IDEOGRAM4_MODEL_DAEMON_URL` | `http://127.0.0.1:8001` | FastAPI/CLI model daemon URL |
-| `IDEOGRAM4_MODEL_DAEMON_LOG_LEVEL` | `info` | Model daemon uvicorn log level |
-| `IDEOGRAM4_MODEL_DAEMON_TIMEOUT` | `30` | FastAPI/CLI daemon request timeout seconds |
-| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `1` | Whether daemon starts model load on startup |
-| `IDEOGRAM4_CLI_DAEMON_MODE` | `auto` | CLI daemon mode: `auto`, `require`, or `off` |
-| `IDEOGRAM4_WEBUI_HOST` | `127.0.0.1` | Vite WebUI bind host used by `run.sh` |
-| `IDEOGRAM4_WEBUI_PORT` | `5173` | Vite WebUI dev server port used by `run.sh` |
-| `IDEOGRAM4_SERVER_LOG_LEVEL` | `info` | Uvicorn log level |
-| `IDEOGRAM4_CORS_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated CORS allow-origins |
-| `IDEOGRAM4_CORS_ALLOW_CREDENTIALS` | `0` | Whether CORS allows browser credentials |
-| `IDEOGRAM4_MODEL_REPO` | `ideogram-ai/ideogram-4-fp8` | HuggingFace model repo |
-| `IDEOGRAM4_MODEL_REVISION` | — | Optional HuggingFace model revision, tag, branch, or commit SHA |
-| `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default generation preset |
-| `IDEOGRAM4_DEFAULT_FORMAT` | `webp` | Default output format (server) |
-| `IDEOGRAM4_DEFAULT_SEED` | `20260608` | Default generation seed |
-| `IDEOGRAM4_IMAGE_QUALITY_WEBP` | `90` | WebP lossy quality |
-| `IDEOGRAM4_IMAGE_QUALITY_JPEG` | `95` | JPEG lossy quality |
-| `IDEOGRAM4_MIN_IMAGE_SIZE` | `128` | Minimum API generation dimension |
+| --- | --- | --- |
+| `IDEOGRAM4_MODEL_REPO` | `MLXBits/ideogram-4-mlx-q8` | Hugging Face MLX model repo |
+| `IDEOGRAM4_MODEL_REVISION` | empty | Optional repo revision |
+| `IDEOGRAM4_MODEL_PATH` | empty | Optional local MLX model root |
+| `IDEOGRAM4_MLX_CACHE_LIMIT_GB` | empty | Optional MLX cache limit |
+| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `0` | Auto-load model on daemon startup |
+| `IDEOGRAM4_MIN_IMAGE_SIZE` | `256` | Minimum API generation dimension |
 | `IDEOGRAM4_MAX_IMAGE_SIZE` | `2048` | Maximum API generation dimension |
-| `IDEOGRAM4_IMAGE_SIZE_MULTIPLE` | `16` | Required API dimension multiple |
-| `IDEOGRAM4_MAX_CAPTION_JSON_BYTES` | `262144` | Maximum caption JSON payload size |
-| `IDEOGRAM4_LOG_DIR` | `logs/` | Log output directory |
-| `IDEOGRAM4_DB_PATH` | `server/data/ideogram4.db` | SQLite database path |
-| `IDEOGRAM4_OUTPUT_DIR` | `server/output/` | Generated image output dir |
-| `IDEOGRAM4_LORA_DIR` | `models/loras/` | LoRA weight files dir |
-| `IDEOGRAM4_LORA_STRENGTH` | `0.6` | Default LoRA merge strength |
-| `IDEOGRAM4_WARMUP_SIZE` | `64` | Warmup resolution (width=height) |
-| `IDEOGRAM4_WARMUP_STEPS` | `2` | Warmup step count |
-| `IDEOGRAM4_DB_QUERY_LIMIT` | `50` | Default row limit for DB queries |
-| `IDEOGRAM4_MAX_FORM_JSON_BYTES` | `1048576` | Maximum saved WebUI form payload size |
+| `IDEOGRAM4_LORA_DIR` | `models/loras` | Local mflux-compatible LoRA files |
 
-## LoRA
+Keep autoload off by default unless a deployment is dedicated to image
+generation. This avoids immediately reserving roughly 29 GB of unified memory
+while the local Magic Prompt LLM may also be running. Use
+`IDEOGRAM4_MLX_CACHE_LIMIT_GB` for tighter cache behavior on smaller machines.
 
-LoRA weights (Lokr or standard lora_A/lora_B format) are merged directly into
-the `conditional_transformer` and `unconditional_transformer` state dicts.
-No runtime adapter overhead — weights are patched once, then inference runs
-at native speed. Original weights are backed up and restored on remove.
-
-### API
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/lora/status` | List available LoRAs + currently applied |
-| `POST` | `/api/lora/apply` | Apply LoRA by name with strength |
-| `POST` | `/api/lora/remove` | Restore original weights |
-
-### File locations
-
-- `server/apply_lora.py` — `apply_lokr_lora()` and `apply_std_lora()` merge logic
-- `server/model_daemon.py` — `apply_lora()`, `remove_lora()`, `list_loras()`, `get_lora_status()`
-- `models/loras/` (gitignored) — `.safetensors` weight files
-- LoRA is auto-detected (Lokr vs standard) by inspecting tensor keys.
-
-### CLI
+## Verification
 
 ```bash
-python ideogram4_mps.py --lora models/loras/foo.safetensors --lora-strength 0.6 ...
+python3 -m compileall server ideogram4_mlx.py
+rg "torch|safetensors.torch|from ideogram4|import ideogram4" server ideogram4_mlx.py
+cd webui && pnpm lint
+cd webui && pnpm build
 ```
 
-### Known issue: MPSGraph recompile overhead
+With model files available, smoke-test `/health`, `/model/load`, `/model/status`,
+and one 256x256 `V4_TURBO_12` generation.
 
-Merging LoRA changes weights→triggers MPSGraph JIT recompile on next inference.
-Mitigated by running a small warmup inference immediately after `apply_lora()`
-and `remove_lora()` via `_warmup_pipeline()`. The warmup cost is now paid at
-apply/remove time rather than on the first user generation.
+Benchmark comparisons should follow `docs/benchmarks.md`.
 
-## Unused dependencies (do not add code that relies on these)
+## Unused dependencies
 
-WebUI `package.json` lists `@hookform/resolvers`, `react-hook-form`, `zod` but
-they are not imported. Form state uses `useReducer` + controlled inputs.
+WebUI `package.json` lists `@hookform/resolvers`, `react-hook-form`, and `zod`,
+but they are not imported. Form state uses `useReducer` and controlled inputs.

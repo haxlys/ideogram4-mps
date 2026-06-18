@@ -24,8 +24,9 @@ function scheduleQueueRetry(
   jobId: string,
   delayMs = BUSY_RETRY_MS,
 ) {
-  if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+  clearQueueRetry(retryTimeoutRef);
   retryTimeoutRef.current = setTimeout(() => {
+    retryTimeoutRef.current = null;
     dispatch({
       type: "UPDATE_JOB",
       id: jobId,
@@ -33,6 +34,12 @@ function scheduleQueueRetry(
     });
     processingRef.current = false;
   }, delayMs);
+}
+
+function clearQueueRetry(retryTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>) {
+  if (!retryTimeoutRef.current) return;
+  clearTimeout(retryTimeoutRef.current);
+  retryTimeoutRef.current = null;
 }
 
 function isAbortStatus(status: GenJob["status"] | undefined) {
@@ -307,7 +314,7 @@ export function useGenerationQueue() {
   useEffect(() => {
     return () => {
       stopPolling();
-      if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+      clearQueueRetry(retryTimeoutRef);
     };
   }, [stopPolling]);
 }

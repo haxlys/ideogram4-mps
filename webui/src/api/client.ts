@@ -1,5 +1,16 @@
-interface ModelStatusResponse {
+export interface ModelStatus {
   state: "idle" | "loading" | "loaded";
+  msg?: string;
+  backend?: "mlx" | string;
+  model_repo?: string;
+  model_path?: string;
+  quantization_bits?: number | null;
+  mlx_memory?: {
+    active_gb?: number | null;
+    peak_gb?: number | null;
+    cache_gb?: number | null;
+    cache_limit_gb?: number | null;
+  };
 }
 
 interface LoadResponse {
@@ -100,7 +111,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export async function getModelStatus() {
-  return request<ModelStatusResponse>("/api/model/status");
+  return request<ModelStatus>("/api/model/status");
 }
 
 export async function loadModel() {
@@ -141,6 +152,7 @@ interface MagicPromptResponse {
 }
 
 interface MagicPromptStatusResponse {
+  enabled: boolean;
   configured: boolean;
   provider: string;
   model: string;

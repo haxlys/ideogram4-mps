@@ -29,11 +29,13 @@ Modes:
   full      Restart model daemon, FastAPI server, and WebUI. Default.
   backend   Restart only the FastAPI server; keep model daemon and WebUI running.
   client    Restart only the Vite WebUI; keep backend and model daemon running.
+  doctor    Check local dependencies, model files, ports, and memory policy.
 
 Aliases:
   all -> full
   server, api -> backend
   webui, frontend -> client
+  check -> doctor
 EOF
 }
 
@@ -52,6 +54,9 @@ case "$MODE" in
     ;;
   client|webui|frontend|--client|--webui|--frontend)
     MODE="client"
+    ;;
+  doctor|check|--doctor|--check)
+    MODE="doctor"
     ;;
   help|-h|--help)
     usage
@@ -267,9 +272,13 @@ run_full() {
   SERVER_PID=$!
 
   wait_for_http "http://127.0.0.1:${SERVER_PORT}/api/model/status" "FastAPI server" 60
-  wait_for_model_loaded 300
+  if is_enabled "${IDEOGRAM4_MODEL_DAEMON_AUTOLOAD:-0}"; then
+    wait_for_model_loaded 300
+  else
+    echo "Model daemon autoload disabled; use the WebUI Load button or POST /api/model/load when needed."
+  fi
 
-  (cd "$ROOT/webui" && "$PNPM" run dev -- --host "$WEBUI_HOST" --port "$WEBUI_PORT") &
+  (cd "$ROOT/webui" && "$PNPM" run dev --host "$WEBUI_HOST" --port "$WEBUI_PORT") &
   WEBUI_PID=$!
 
   wait "$SERVER_PID" "$WEBUI_PID"
@@ -305,11 +314,28 @@ run_client() {
   echo "  API:   http://localhost:$SERVER_PORT (kept running)"
   echo ""
 
-  (cd "$ROOT/webui" && "$PNPM" run dev -- --host "$WEBUI_HOST" --port "$WEBUI_PORT") &
+  (cd "$ROOT/webui" && "$PNPM" run dev --host "$WEBUI_HOST" --port "$WEBUI_PORT") &
   WEBUI_PID=$!
 
   wait "$WEBUI_PID"
 }
+
+run_doctor() {
+  local doctor_python="$VENV_PYTHON"
+  if [ ! -x "$doctor_python" ]; then
+    doctor_python="${PYTHON:-$(command -v python3 || true)}"
+  fi
+  if [ -z "$doctor_python" ]; then
+    echo "No Python interpreter found for doctor checks." >&2
+    exit 1
+  fi
+  "$doctor_python" "$ROOT/scripts/doctor.py"
+}
+
+if [ "$MODE" = "doctor" ]; then
+  run_doctor
+  exit $?
+fi
 
 trap cleanup EXIT INT TERM
 

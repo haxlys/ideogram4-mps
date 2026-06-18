@@ -1,445 +1,183 @@
-# Ideogram 4 on Apple Silicon (MPS)
+# Ideogram 4 MLX WebUI
 
-Run [Ideogram 4](https://huggingface.co/ideogram-ai/ideogram-4-fp8) on a MacBook
-with MPS — no CUDA, no NVIDIA GPU needed.
-
-FP8 weights are dequantized to bf16 on CPU, then the full model is loaded onto
-MPS. Three non-obvious tricks make this work: a monkey-patch around MPS's missing
-`ndtri` op, manual fp8→bf16 dequant that avoids bitsandbytes entirely, and
-loading the Qwen3-VL text encoder without its vision components.
-
-A **WebUI** (FastAPI + React + SQLite) is included for interactive use with
-structured prompt composition, generation progress tracking, image history, and
-prompt history.
-
-## Quick start
-
-### CLI (single image)
-
-```bash
-# 1. Create venv and install deps
-python3 -m venv .venv && source .venv/bin/activate
-pip install git+https://github.com/ideogram-oss/ideogram4.git
-pip install -r server/requirements.txt
-
-# 2. Log in and accept the gated repo terms at
-#    https://huggingface.co/ideogram-ai/ideogram-4-fp8
-hf auth login
-
-# 3. Generate
-python ideogram4_mps.py \
-  --prompt-file examples/caption.json \
-  --resolution 1024 \
-  --preset V4_QUALITY_48 \
-  --out examples/result.png
-```
-
-### WebUI (full stack)
-
-```bash
-# 1. Create venv and install Python deps
-python3 -m venv .venv && source .venv/bin/activate
-pip install git+https://github.com/ideogram-oss/ideogram4.git
-pip install -r server/requirements.txt
-
-# 2. Install Node deps
-cd webui && pnpm install && cd ..
-
-# 3. Configure Quick Prompt (optional but recommended)
-cp .env.example .env
-# Edit .env: set IDEOGRAM4_MAGIC_PROMPT_API_KEY
-
-# 4. Log in to HuggingFace
-hf auth login
-
-# 5. Launch
-./run.sh
-```
-
-Then open http://localhost:5173.
-
-`run.sh` also supports targeted restarts:
-
-```bash
-./run.sh full      # model daemon + FastAPI server + WebUI (default)
-./run.sh backend   # FastAPI server only; keeps the loaded model daemon alive
-./run.sh client    # Vite WebUI only; keeps backend and model daemon alive
-```
-
-> **Note:** `ideogram4` is not published on PyPI. `pip install git+...` pulls it
-> directly from the [official GitHub repo](https://github.com/ideogram-oss/ideogram4).
-> `huggingface-cli login` is deprecated — use `hf auth login` instead.
-
-## Model download
-
-The model weights (~26 GB, FP8 safetensors) are **not** included in this repo.
-They are downloaded automatically from HuggingFace on first pipeline load — you
-don't need to run a separate download command. Weights are cached to
-`~/.cache/huggingface/hub/`.
-
-To pre-download without running inference:
-
-```bash
-source .venv/bin/activate
-hf download ideogram-ai/ideogram-4-fp8
-```
-
-> The download above is optional. The model auto-downloads on first load either way.
-
-### Prerequisites
-
-1. **License**: Accept the terms at
-   [https://huggingface.co/ideogram-ai/ideogram-4-fp8](https://huggingface.co/ideogram-ai/ideogram-4-fp8)
-   (**"Agree and access repository"** button).
-
-2. **Token permissions**: If using a **fine-grained** token, you must enable
-   **"Read access to contents of all public gated repos you can access"** in
-   [your token settings](https://huggingface.co/settings/tokens). The simplest
-   option is to create a **Read**-scoped token (not fine-grained) and use it with
-   `hf auth login`.
+Local Ideogram 4 image generation for Apple Silicon using MLX-native weights.
+The default model is `MLXBits/ideogram-4-mlx-q8`, an int8 MLX conversion of
+Ideogram 4 intended for `mflux`.
 
 ## Architecture
 
-```
-Browser (localhost:5173 by default)
-    │
-    │ HTTP (Vite dev proxy /api → localhost:8000 by default)
-    ▼
-FastAPI Server (server/main.py, port 8000 by default)
-    │  WebUI API, Magic Prompt, SQLite, image persistence
-    │
-    │ HTTP (local model RPC)
-    ▼
-Model Daemon (server/model_daemon.py, port 8001 by default)
-    │  Owns the single Ideogram4Pipeline in MPS memory
-    │  Model load/unload, LoRA, generation jobs, artifacts
-    │
-    ├── apply_lora.py      ← Lokr / standard weight merge
-    └── Ideogram4Pipeline (MPS)
-          FP8 → bf16 on CPU → MPS
-          Qwen3-VL text encoder (text-only)
-          Conditional + Unconditional transformers
-          VAE autoencoder
-    │
-FastAPI side modules:
-    ├── magic_prompt.py    ← POST /api/magic-prompt → OpenAI-compatible LLM
-    │
-    ├── config.py          ← env var config (paths, ports, defaults)
-    │
-    ├── db.py              ← SQLite (images, prompts, form state)
-    │
-    └── logger.py          ← structured logs → logs/
+```text
+WebUI (:5173) -> FastAPI (:8000) -> Model daemon (:8001) -> mflux/MLX
 ```
 
-### Key ports
+- `server/model_daemon.py` owns the single local MLX model instance and handles
+  load/unload, generation jobs, cancellation, short-lived artifacts, and local
+  LoRA reloads.
+- `server/mlx_runtime.py` resolves the Hugging Face or local MLX model path,
+  loads the mflux Ideogram 4 runtime, tracks MLX memory, and runs image
+  generation.
+- `server/main.py` is the WebUI gateway and persistence layer. It stores prompts
+  and generated images, runs Magic Prompt, and proxies generation work to the
+  daemon.
+- `webui/` is the React/Vite interface.
+- `ideogram4_mlx.py` is the CLI. It uses the daemon by default and can run
+  direct local MLX generation with `--daemon off`.
 
-| Default port | Variable | Process | Role |
-|--------------|----------|---------|------|
-| 8001 | `IDEOGRAM4_MODEL_DAEMON_PORT` | `model_daemon.py` | Single MPS pipeline owner, LoRA, generation jobs |
-| 8000 | `IDEOGRAM4_SERVER_PORT` | `main.py` | FastAPI gateway, SQLite, generated image persistence |
-| 5173 | `IDEOGRAM4_WEBUI_PORT` | Vite dev server | React WebUI with proxy to `IDEOGRAM4_SERVER_PORT` |
+The FastAPI/WebUI generation contract stays stable: submit a structured caption,
+width, height, preset, seed, and output format.
 
-### Startup flow (`./run.sh`)
+## Legacy PyTorch/MPS Runtime
 
-`./run.sh` defaults to `full` mode:
+The previous PyTorch/MPS implementation is preserved on the
+[`legacy/pytorch-mps`](https://github.com/haxlys/ideogram4-mps/tree/legacy/pytorch-mps)
+branch. Use that branch if you need the old direct `torch`/MPS runtime,
+FP8 dequant loading path, MPS scheduler patching, MPS warmup behavior, or the
+old `ideogram4_mps.py` CLI.
 
-1. Installs Python + Node dependencies
-2. Loads `.env` from project root (if present)
-3. Stops existing processes on the configured model daemon/server/webui ports (graceful stop first, force stop only if needed)
-4. Starts model daemon, server, then webui
-5. Cleans up all processes on SIGINT / SIGTERM / EXIT
+This `main` line is now optimized for the MLX/mflux q8 runtime and does not aim
+to keep backwards compatibility with the old PyTorch/MPS architecture.
 
-For targeted restarts:
-
-| Command | Stops | Starts | Keeps running |
-|---------|-------|--------|---------------|
-| `./run.sh full` | model daemon, FastAPI, WebUI | model daemon, FastAPI, WebUI | — |
-| `./run.sh backend` | FastAPI server only | FastAPI server only | model daemon, WebUI |
-| `./run.sh client` | WebUI only | WebUI only | model daemon, FastAPI server |
-
-Use `./run.sh backend` when the model is already loaded and you only changed
-FastAPI code. This avoids paying the model load cost again.
-
-### Manual startup (for debugging)
+## Install
 
 ```bash
-# Load env vars, then:
-# Terminal 1: Model daemon
-set -a && source .env && set +a
-python server/model_daemon.py
-
-# Terminal 2: API Server
-set -a && source .env && set +a
-python server/main.py
-
-# Terminal 3: WebUI
-cd webui && pnpm dev -- --host "${IDEOGRAM4_WEBUI_HOST:-127.0.0.1}" --port "${IDEOGRAM4_WEBUI_PORT:-5173}"
+python3 -m venv .venv
+.venv/bin/python -m pip install -r server/requirements.txt
+cd webui && pnpm install
+./run.sh doctor
 ```
 
-![WebUI screenshot](examples/webui-screenshot.png)
+`server/requirements.txt` pins `mflux` to PR #445 commit
+`8d80b9cb53688b62a2f814604b9f8b48987c5acd` because the MLXBits q8 loader is not
+in the latest stable mflux release yet. The rollback branch for the previous
+PyTorch/MPS implementation is `legacy/pytorch-mps`.
 
-## WebUI features
+## Model Access
 
-- **Model Panel** — Load / Unload controls with live status indicator (idle / loading / loaded)
-- **Quick Prompt** — Natural language → structured caption via configurable OpenAI-compatible LLM provider. Supports hosted providers and local `llama.cpp` servers, text-only and text+image (drag-drop, multi-image). Auto-populates all form fields including style settings.
-- **Caption Editor** — Tabbed interface: structured form (scene, style, composition) or raw JSON, with bidirectional real-time sync
-- **Raw JSON mode** — If raw JSON is present, generation submits that JSON object directly rather than rebuilding it from form fields
-- **Style Settings** — Aesthetics, lighting, medium (photograph / illustration / 3d_render / painting / graphic_design), camera or art style, color palette
-- **Composition** — Background description + dynamic element list (type: obj/text, bbox, description)
-- **LoRA** — Apply/remove LoRA weights (Lokr or standard format) with strength control. Auto-detected from `models/loras/` (gitignored).
-- **Generation Settings** — 7 aspect ratio presets with visual preview, custom width/height (128–2048px, snapped to 128), quality preset (Turbo / Default / Quality), seed, estimated generation time
-- **Status Overlay** — Progress bar with percentage during generation, error state with dismiss
-- **Prompt History** — Sidebar with persistent URLs (`/history/$promptId`), click to restore form + view result, auto-refresh on generation
-- **Auto-save** — Form state persisted via server API (SQLite) with localStorage fallback
+Default:
 
-More WebUI notes: [`webui/README.md`](webui/README.md)
-
-## CLI options
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--prompt` | — | JSON caption string (inline) |
-| `--prompt-file` | — | File containing JSON caption |
-| `--repo` | `ideogram-ai/ideogram-4-fp8` | HuggingFace repo ID |
-| `--width` | — | Output width, multiple of 16 (overrides `--resolution`) |
-| `--height` | — | Output height, multiple of 16 (overrides `--resolution`) |
-| `--resolution` | `1024` | Square output (multiple of 16). Ignored if `--width`/`--height` set |
-| `--preset` | `V4_QUALITY_48` | `V4_QUALITY_48` / `V4_DEFAULT_20` / `V4_TURBO_12` |
-| `--seed` | `20260608` | Random seed |
-| `--format` | `png` | Output format: `png` / `webp` / `jpeg` |
-| `--quality` | — | Lossy quality 1-100 (webp/jpeg only; default: lossless) |
-| `--lora` | — | Path to LoRA `.safetensors` to apply (Lokr or standard) |
-| `--lora-strength` | `0.6` | LoRA merge strength |
-| `--daemon` | `auto` | `auto` uses the model daemon when reachable and falls back to direct mode; `require` fails if daemon is unavailable; `off` always loads directly |
-| `--daemon-url` | `http://127.0.0.1:8001` | Model daemon URL for CLI generation |
-| `--out` | **required** | Output image path |
-
-## JSON caption format
-
-Ideogram 4 needs structured JSON captions. See `examples/caption.json` for a
-complete example. Minimal example:
-
-```json
-{
-  "compositional_deconstruction": {
-    "background": "Seoul alleyway at dusk, warm neon signs, wet pavement",
-    "elements": [
-      {"type": "obj", "desc": "A young Korean woman holding a sign"},
-      {"type": "text", "desc": "The sign reads '사랑합니다' in clean Hangul"}
-    ]
-  }
-}
+```bash
+IDEOGRAM4_MODEL_REPO=MLXBits/ideogram-4-mlx-q8
 ```
 
-Full format reference: https://github.com/ideogram-oss/ideogram4/blob/main/docs/prompting.md
+For an already downloaded model directory:
 
-## API endpoints
+```bash
+IDEOGRAM4_MODEL_PATH=/path/to/ideogram-4-mlx-q8
+```
+
+The model root must contain `split_model.json`. If `IDEOGRAM4_MODEL_PATH` is not
+set, the daemon downloads/verifies the Hugging Face repo with
+`huggingface_hub.snapshot_download`.
+
+The MLXBits conversion is distributed under the original Ideogram 4
+Non-Commercial Model Agreement. Check the model card before using it outside
+personal or research workflows.
+
+## Run
+
+```bash
+./run.sh          # model daemon + FastAPI + WebUI
+./run.sh backend  # restart FastAPI only
+./run.sh client   # restart Vite only
+./run.sh doctor   # check dependencies, model files, ports, and memory policy
+```
+
+Manual debugging:
+
+```bash
+set -a && source .env && set +a
+.venv/bin/python server/model_daemon.py
+.venv/bin/python server/main.py
+cd webui && pnpm dev
+```
+
+CLI:
+
+```bash
+python3 ideogram4_mlx.py --prompt-file examples/caption.json --out examples/result.png
+python3 ideogram4_mlx.py --daemon off --prompt-file examples/caption.json --out examples/result.png
+```
+
+## API
 
 | Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/model/status` | Model state (`idle` / `loading` / `loaded`) |
-| `POST` | `/api/model/load` | Trigger model load |
-| `POST` | `/api/model/unload` | Unload model from memory |
-| `POST` | `/api/magic-prompt` | Natural language → structured caption via LLM |
-| `POST` | `/api/generate` | Submit generation task (JSON caption + params). Local single-generation slot; returns `409` if another generation is running |
-| `GET` | `/api/status/{task_id}` | Poll generation progress and result |
-| `POST` | `/api/verify` | Validate a JSON caption without generating |
-| `GET` | `/api/lora/status` | List available LoRAs + currently applied |
-| `POST` | `/api/lora/apply` | Apply LoRA by name with strength |
-| `POST` | `/api/lora/remove` | Restore original weights |
-| `GET` | `/api/images` | List generated images |
-| `DELETE` | `/api/images/{id}` | Delete a generated image |
-| `GET` | `/api/prompts` | List saved prompts |
-| `GET` | `/api/prompts/{id}` | Get single prompt by ID |
-| `DELETE` | `/api/prompts/{id}` | Delete a saved prompt |
-| `GET` | `/api/form` | Load last saved form state |
-| `POST` | `/api/form` | Save form state |
+| --- | --- | --- |
+| `GET` | `/api/model/status` | Daemon state, backend, model repo/path, quantization, MLX memory |
+| `POST` | `/api/model/load` | Load the MLX model |
+| `POST` | `/api/model/unload` | Unload the MLX model |
+| `POST` | `/api/generate` | Start one local generation job |
+| `GET` | `/api/status/{task_id}` | Poll generation progress |
+| `POST` | `/api/cancel/{task_id}` | Request cancellation |
+| `GET` | `/api/lora/status` | Local LoRA files and active stack |
+| `POST` | `/api/lora/apply` | Reload model with a local LoRA stack |
+| `POST` | `/api/lora/remove` | Reload model without LoRA |
 
-### Runtime concurrency
+Generation is single-slot. A second concurrent generation returns HTTP `409`.
+LoRA apply/remove also uses the same model operation lock because mflux applies
+LoRA at model load time.
 
-This is a local single-user app. Model load, unload, LoRA apply/remove, and
-generation share one pipeline inside `model_daemon.py` and are protected by a
-daemon-side pipeline operation lock. Generation runs in a daemon thread, but
-only one generation is accepted at a time; extra `/api/generate` requests return
-`409` instead of queuing unbounded work. Completed daemon task artifacts are kept
-briefly for polling/download and cleaned up after about one hour. FastAPI stores
-WebUI results in SQLite after downloading the daemon artifact.
-
-## Memory & speed
-
-Common baseline (V4_QUALITY_48):
-
-- **Disk**: ~26 GB model weights (FP8 safetensors)
-- **Total model params**: ~26.8B (2× 9.3B transformers + 8B text encoder + VAE)
-- **Peak memory (M5 Max, no swap)**: ~50 GB
-- **Peak memory (M1 Max 64 GB, heavy swap)**: 63–68 GB
-
-### M5 Max (128 GB unified memory)
-
-| Resolution | Load | Generation | Peak MPS mem |
-|:----------:|:----:|:----------:|:-----------:|
-| 1024×1024 | ~197 s | ~408 s | ~50 GB |
-
-### Pipeline load breakdown
-
-All times from `bench_load.py` run on each machine. M5 Max numbers are with `PYTORCH_MPS_FAST_MATH=1`.
-
-| Step | M5 Max (128 GB) | M1 Max (64 GB) |
-|------|:---:|:---:|
-| Text encoder (CPU dequant → MPS) | 77 s | 128 s |
-| Conditional transformer (9.3B) | 74 s | 84 s |
-| Unconditional transformer (9.3B) | 38 s | 84 s |
-| VAE | 2 s | 19 s |
-| MPSGraph warmup (first inference) | 5 s | 88 s |
-| **Pipeline load total** | **197 s** | **315 s** |
-
-### M1 Max (64 GB unified memory)
-
-### Cross-chip comparison
-
-All at V4_QUALITY_48, same caption prompt. Ratios are consistent across
-resolutions — generation slowdown is fixed per-step, not pixel-dependent.
-
-| Metric | M5 Max (128 GB) | M1 Max (64 GB) | Ratio (M1/M5) |
-|--------|:---------------:|:--------------:|:-------------:|
-| Pipeline load | 197 s | 315 s | **1.6×** |
-| Generation 1024² | 408 s | 2240 s | **5.5×** |
-| Generation 512² | ~149 s* | 818 s | **5.5×** |
-| Peak memory 1024² | ~50 GB | 68.4 GB | swap |
-| Peak memory 512² | — | 63.7 GB | swap |
-
-\* 512² on M5 Max is estimated (408 / 2.74 scaling based on M1 resolution ratio).
-
-### Analysis
-
-- **Pipeline load** is 1.6× slower on M1 Max — dominated by CPU dequant + MPS
-  transfer (text encoder 8B), not GPU compute.
-- **Generation** is consistently **~5.5× slower** regardless of resolution
-  (512² and 1024² show the same ratio). This reflects the combined effect of
-  lower MPS compute throughput, narrower memory bandwidth, and swap pressure
-  on the 64 GB machine.
-- On M1 Max 64 GB, **even 512×512 exceeds physical RAM** (63.7 GB peak).
-  Swap is unavoidable at any resolution with V4_QUALITY_48.
-
-### Recommendations for M1 Max 64 GB
-
-| Goal | Suggested config | Est. time |
-|:----|:----------------|:---------:|
-| Best quality without swap | 768×768 + V4_DEFAULT_20 | ~300–400 s |
-| Fast generation | 512×512 + V4_TURBO_12 | ~200–300 s |
-| Maximum quality (accept swap) | 1024×1024 + V4_QUALITY_48 | ~2240 s |
-
-Upgrading to **96 GB+ unified memory** eliminates swap entirely and brings
-generation time closer to the ~2-3× chip-gap ratio.
-
-## Logging
-
-All processes write structured runtime logs to `logs/` (gitignored):
-
-| Process | Log file pattern | Content |
-|---------|-----------------|---------|
-| CLI (`ideogram4_mps.py`) | `logs/ideogram4_mps-<ts>.log` | Download, dequant, loading, generation, output |
-| Model daemon (`model_daemon.py`) | `logs/model-<ts>.log` | Model lifecycle, LoRA, generation jobs, artifacts |
-| Server (`main.py`) | `logs/server-<ts>.log` | HTTP requests, Magic Prompt, SQLite persistence, daemon proxy |
-
-Logs include timestamps, severity level, and structured messages. Set
-`IDEOGRAM4_LOG_DIR` to override the default `logs/` directory.
-
-The `.log` suffix from generation metadata (`examples/result.log`) is kept in git via
-`.gitignore` exclusion while runtime logs are ignored.
-
-## Local Security Defaults
-
-The WebUI, API, and model daemon are designed for a trusted single-user machine.
-By default, both FastAPI and the model daemon bind to `127.0.0.1`, CORS is
-limited to the local Vite origins, and image files are only served or deleted
-when they live inside `IDEOGRAM4_OUTPUT_DIR`.
-
-If you intentionally expose the API on a LAN by setting
-`IDEOGRAM4_SERVER_HOST=0.0.0.0`, put it behind your own network controls. The
-API has no user authentication and includes expensive model operations plus
-destructive local actions such as deleting generated images.
+All MLX/mflux runtime calls are routed through a single worker thread inside the
+model daemon. This avoids MLX thread-local stream failures when a LoRA-loaded
+model is generated after a reload. Do not call `runtime.load`,
+`runtime.apply_loras`, `runtime.remove_loras`, `runtime.generate`, or
+`runtime.unload` directly from request/task threads.
 
 ## Configuration
 
-All settings are read from environment variables at import time by `server/config.py`.
-`run.sh` auto-loads `.env` from the project root. See `.env.example` for all options.
+See `.env.example` for all settings. Common values:
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `IDEOGRAM4_MAGIC_PROMPT_API_KEY` | — | LLM API key for Quick Prompt (use `local` for local unauthenticated servers) |
-| `IDEOGRAM4_MAGIC_PROMPT_PROVIDER` | `openai_compatible` | Provider behavior: `openai_compatible` or `llama_cpp` |
-| `IDEOGRAM4_MAGIC_PROMPT_MODEL` | `local-model` | LLM model for prompt expansion |
-| `IDEOGRAM4_MAGIC_PROMPT_BASE_URL` | `http://127.0.0.1:18082/v1` | LLM provider base URL |
-| `IDEOGRAM4_MAGIC_PROMPT_PROMPT_PROFILE` | provider-specific | Prompt profile: `ideogram_official`, `compact_json`, or `gemma4` |
-| `IDEOGRAM4_MAGIC_PROMPT_RESPONSE_FORMAT` | `off` | Optional structured output request mode; currently `off` or `json_object` |
-| `IDEOGRAM4_MAGIC_PROMPT_TOKEN_PARAM` | `max_tokens` | Token budget parameter name: `max_tokens` or `max_completion_tokens` |
-| `IDEOGRAM4_MAGIC_PROMPT_MANAGED_LLAMA` | — | If truthy, `run.sh` starts and stops a local `llama-server` for Magic Prompt |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_PORT` | `18082` | Managed local `llama-server` port |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MODEL` | — | Managed local GGUF model path |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_MMPROJ` | — | Optional managed local multimodal projector GGUF path |
-| `IDEOGRAM4_MAGIC_PROMPT_LOCAL_LLAMA_CTX` | `8192` | Managed local `llama-server` context size |
-| `IDEOGRAM4_MAGIC_PROMPT_TIMEOUT` | `120` | LLM request timeout (seconds) |
-| `IDEOGRAM4_MAGIC_PROMPT_MAX_TOKENS` | `16384` | LLM max response tokens |
-| `IDEOGRAM4_MAGIC_PROMPT_TEMPERATURE` | `1.0` | LLM temperature |
-| `IDEOGRAM4_MAGIC_PROMPT_MAX_CHARS` | `12000` | Maximum Quick Prompt text length |
-| `IDEOGRAM4_MAGIC_PROMPT_MAX_IMAGES` | `4` | Maximum Quick Prompt image attachments |
-| `IDEOGRAM4_MAGIC_PROMPT_MAX_IMAGE_BYTES` | `6291456` | Maximum decoded bytes per Quick Prompt image |
-| `IDEOGRAM4_SERVER_HOST` | `127.0.0.1` | FastAPI bind host |
-| `IDEOGRAM4_SERVER_PORT` | `8000` | FastAPI listen port |
-| `IDEOGRAM4_MODEL_DAEMON_HOST` | `127.0.0.1` | Model daemon bind host |
-| `IDEOGRAM4_MODEL_DAEMON_PORT` | `8001` | Model daemon listen port |
-| `IDEOGRAM4_MODEL_DAEMON_URL` | `http://127.0.0.1:8001` | FastAPI/CLI model daemon URL |
-| `IDEOGRAM4_MODEL_DAEMON_LOG_LEVEL` | `info` | Model daemon uvicorn log level |
-| `IDEOGRAM4_MODEL_DAEMON_TIMEOUT` | `30` | FastAPI/CLI daemon request timeout seconds |
-| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `1` | Whether daemon starts model load on startup |
-| `IDEOGRAM4_CLI_DAEMON_MODE` | `auto` | CLI daemon mode: `auto`, `require`, or `off` |
-| `IDEOGRAM4_WEBUI_HOST` | `127.0.0.1` | Vite WebUI bind host used by `run.sh` |
-| `IDEOGRAM4_WEBUI_PORT` | `5173` | Vite WebUI dev server port used by `run.sh` |
-| `IDEOGRAM4_SERVER_LOG_LEVEL` | `info` | Uvicorn log level |
-| `IDEOGRAM4_CORS_ORIGINS` | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated CORS allow-origins |
-| `IDEOGRAM4_CORS_ALLOW_CREDENTIALS` | `0` | Whether CORS allows browser credentials |
-| `IDEOGRAM4_MODEL_REPO` | `ideogram-ai/ideogram-4-fp8` | HuggingFace model repo |
-| `IDEOGRAM4_MODEL_REVISION` | — | Optional HuggingFace model revision, tag, branch, or commit SHA |
-| `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default generation preset |
-| `IDEOGRAM4_DEFAULT_FORMAT` | `webp` | Default output format (server) |
-| `IDEOGRAM4_DEFAULT_SEED` | `20260608` | Default generation seed |
-| `IDEOGRAM4_IMAGE_QUALITY_WEBP` | `90` | WebP lossy quality |
-| `IDEOGRAM4_IMAGE_QUALITY_JPEG` | `95` | JPEG lossy quality |
-| `IDEOGRAM4_MIN_IMAGE_SIZE` | `128` | Minimum API generation dimension |
-| `IDEOGRAM4_MAX_IMAGE_SIZE` | `2048` | Maximum API generation dimension |
-| `IDEOGRAM4_IMAGE_SIZE_MULTIPLE` | `16` | Required API dimension multiple |
-| `IDEOGRAM4_MAX_CAPTION_JSON_BYTES` | `262144` | Maximum caption JSON payload size |
-| `IDEOGRAM4_LOG_DIR` | `logs/` | Log output directory |
-| `IDEOGRAM4_DB_PATH` | `server/data/ideogram4.db` | SQLite database path |
-| `IDEOGRAM4_OUTPUT_DIR` | `server/output/` | Generated image output dir |
-| `IDEOGRAM4_LORA_DIR` | `models/loras/` | LoRA weight files dir |
-| `IDEOGRAM4_LORA_STRENGTH` | `0.6` | Default LoRA merge strength |
-| `IDEOGRAM4_WARMUP_SIZE` | `64` | Warmup resolution (width=height) |
-| `IDEOGRAM4_WARMUP_STEPS` | `2` | Warmup step count |
-| `IDEOGRAM4_DB_QUERY_LIMIT` | `50` | Default row limit for DB queries |
-| `IDEOGRAM4_MAX_FORM_JSON_BYTES` | `1048576` | Maximum saved WebUI form payload size |
+| --- | --- | --- |
+| `IDEOGRAM4_MODEL_REPO` | `MLXBits/ideogram-4-mlx-q8` | Hugging Face MLX model repo |
+| `IDEOGRAM4_MODEL_REVISION` | empty | Optional repo revision |
+| `IDEOGRAM4_MODEL_PATH` | empty | Optional local model root containing `split_model.json` |
+| `IDEOGRAM4_MLX_CACHE_LIMIT_GB` | empty | Optional MLX cache limit |
+| `IDEOGRAM4_MODEL_DAEMON_AUTOLOAD` | `0` | Load model when daemon starts |
+| `IDEOGRAM4_DEFAULT_PRESET` | `V4_QUALITY_48` | Default sampler preset |
+| `IDEOGRAM4_MIN_IMAGE_SIZE` | `256` | Minimum API dimension |
+| `IDEOGRAM4_MAX_IMAGE_SIZE` | `2048` | Maximum API dimension |
+| `IDEOGRAM4_LORA_DIR` | `models/loras` | Local mflux-compatible LoRA files |
 
-- Apple Silicon Mac (M1/M2/M3/M4/M5)
-- Python 3.11+ with pip
-- Node.js 20+ with pnpm
-- `PYTORCH_ENABLE_MPS_FALLBACK=1` (set automatically)
-- `PYTORCH_MPS_FAST_MATH=1` (set automatically)
-- ~50 GB unified memory for 1024×1024 V4_QUALITY_48 (smaller resolutions / presets may work with less)
-- ~26 GB free disk space for FP8 model weights
-- HuggingFace account with access to the gated repo `ideogram-ai/ideogram-4-fp8`
+Autoload is off by default so the local Magic Prompt LLM and the image model do
+not immediately compete for unified memory. Use the WebUI Load button or
+`POST /api/model/load` when image generation is needed. Set
+`IDEOGRAM4_MLX_CACHE_LIMIT_GB` when the machine needs a stricter reusable MLX
+cache budget.
 
-## Example output
+## Benchmarks
 
-<table>
-  <tr>
-    <td align="center"><img src="examples/result.png" alt="Korean woman in hanbok, garden at dawn" width="300"/><br/><sub>한복 여인, 새벽 정원<br/>(V4_QUALITY_48, 1024×1024)</sub></td>
-    <td align="center"><img src="examples/result_village.png" alt="Korean hanok village at twilight" width="300"/><br/><sub>황혼 녘 한옥마을<br/>(V4_QUALITY_48, 1024×1024)</sub></td>
-    <td align="center"><img src="examples/result_pattern.png" alt="Korean traditional folk pattern illustration" width="200"/><br/><sub>전통 문양 일러스트<br/>(V4_QUALITY_48, 832×1248)</sub></td>
-  </tr>
-</table>
+Use [docs/benchmarks.md](docs/benchmarks.md) for the canonical prompt, seed,
+presets, and metrics. Current local measurements:
 
-## License
+| Case | PyTorch/MPS legacy | MLX q8 | Difference |
+| --- | --- | --- | --- |
+| Model load, local files ready | about 285s | about 2-3s | MLX loads about 95-143x faster |
+| 1024x1024 `V4_QUALITY_48`, seed `20260608` | 408.0s | 375.1s | MLX saves 32.9s, about 8.1% faster |
 
-This project is MIT. The Ideogram 4 model weights are under the
-[Ideogram 4 Non-Commercial License](https://huggingface.co/ideogram-ai/ideogram-4-fp8/blob/main/LICENSE.md).
+The 1024 benchmark uses the same `examples/caption.json` prompt, preset, seed,
+and output size as the legacy run. The old MPS result is preserved in
+`examples/result.log`; the MLX result was generated with the q8 runtime after
+the model was available locally.
+
+## Magic Prompt
+
+`POST /api/magic-prompt` expands a plain idea into the structured JSON caption
+Ideogram 4 expects. It uses the existing OpenAI-compatible provider abstraction
+and local llama.cpp option. Caption validation now uses mflux's Ideogram 4
+caption verifier instead of the old `ideogram4` Python package.
+
+## Verification
+
+```bash
+python3 -m compileall server ideogram4_mlx.py
+rg "torch|safetensors.torch|from ideogram4|import ideogram4" server ideogram4_mlx.py
+cd webui && pnpm lint && pnpm build
+```
+
+With model files available, also verify:
+
+```bash
+curl http://127.0.0.1:8001/health
+curl -X POST http://127.0.0.1:8001/model/load
+curl http://127.0.0.1:8001/model/status
+```

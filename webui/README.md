@@ -1,6 +1,6 @@
-# Ideogram 4 MPS WebUI
+# Ideogram 4 MLX WebUI
 
-React + TypeScript + Vite frontend for the local Ideogram 4 MPS app.
+React + TypeScript + Vite frontend for the local Ideogram 4 MLX app.
 
 The WebUI talks to the FastAPI server through Vite's `/api/*` dev proxy. By
 default the app runs at `http://localhost:5173` and proxies API calls to
