@@ -143,7 +143,7 @@ while the local Magic Prompt LLM may also be running. Use
 
 ```bash
 python3 -m compileall server ideogram4_mlx.py
-python3 scripts/check_mlx_runtime_guardrails.py
+rg "torch|safetensors.torch|from ideogram4|import ideogram4" server ideogram4_mlx.py
 cd webui && pnpm lint
 cd webui && pnpm build
 ```
