@@ -143,7 +143,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "CLEAR_QUEUED_JOBS":
       return {
         ...state,
-        genQueue: state.genQueue.filter((job) => job.status !== "queued"),
+        genQueue: state.genQueue.filter(
+          (job) => job.status !== "queued" && job.status !== "waiting",
+        ),
       };
 
     case "CLEAR_FINISHED_JOBS":

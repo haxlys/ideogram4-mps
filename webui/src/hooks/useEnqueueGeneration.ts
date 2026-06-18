@@ -8,7 +8,12 @@ import { getCaptionForGeneration, getCaptionHld } from "@/validation/caption";
 import { toast } from "sonner";
 
 function isPendingJob(job: GenJob) {
-  return job.status === "queued" || job.status === "submitting" || job.status === "running";
+  return (
+    job.status === "queued"
+    || job.status === "waiting"
+    || job.status === "submitting"
+    || job.status === "running"
+  );
 }
 
 export function useEnqueueGeneration() {

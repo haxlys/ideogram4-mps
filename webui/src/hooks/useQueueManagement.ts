@@ -13,7 +13,7 @@ export function useQueueManagement() {
 
   const cancelJob = useCallback(
     async (job: GenJob) => {
-      if (job.status === "queued") {
+      if (job.status === "queued" || job.status === "waiting") {
         dispatch({ type: "REMOVE_JOB", id: job.id });
         return;
       }
@@ -79,7 +79,9 @@ export function useQueueManagement() {
   );
 
   const clearQueued = useCallback(() => {
-    const count = state.genQueue.filter((job) => job.status === "queued").length;
+    const count = state.genQueue.filter(
+      (job) => job.status === "queued" || job.status === "waiting",
+    ).length;
     if (count === 0) return;
     dispatch({ type: "CLEAR_QUEUED_JOBS" });
     toast.success(`Removed ${count} queued job${count === 1 ? "" : "s"}`);

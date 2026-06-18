@@ -1,15 +1,38 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ApiError, cancelTask, getTaskStatus, submitGenerate } from "@/api/client";
 import { useAppState } from "@/state/context";
-import type { GenJob, ImageEntry } from "@/state/types";
+import type { AppAction, GenJob, ImageEntry } from "@/state/types";
 import { toast } from "sonner";
 
 const POLL_INTERVAL_MS = 2000;
-const BUSY_RETRY_MS = 3000;
+const BUSY_RETRY_MS = 2000;
 
 function isActiveJob(job: GenJob) {
-  return job.status === "submitting" || job.status === "running" || job.status === "cancelling";
+  return (
+    job.status === "waiting"
+    || job.status === "submitting"
+    || job.status === "running"
+    || job.status === "cancelling"
+  );
+}
+
+function scheduleQueueRetry(
+  retryTimeoutRef: MutableRefObject<ReturnType<typeof setTimeout> | null>,
+  processingRef: MutableRefObject<boolean>,
+  dispatch: (action: AppAction) => void,
+  jobId: string,
+  delayMs = BUSY_RETRY_MS,
+) {
+  if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
+  retryTimeoutRef.current = setTimeout(() => {
+    dispatch({
+      type: "UPDATE_JOB",
+      id: jobId,
+      patch: { status: "queued", msg: "Queued" },
+    });
+    processingRef.current = false;
+  }, delayMs);
 }
 
 function isAbortStatus(status: GenJob["status"] | undefined) {
@@ -249,15 +272,12 @@ export function useGenerationQueue() {
           type: "UPDATE_JOB",
           id: jobId,
           patch: {
-            status: "queued",
+            status: "waiting",
             msg: "Waiting for current generation…",
           },
         });
-        processingRef.current = false;
-        if (retryTimeoutRef.current) clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = setTimeout(() => {
-          void processQueueRef.current();
-        }, BUSY_RETRY_MS);
+        // Keep processingRef true so useEffect does not immediately retry and spam 409s.
+        scheduleQueueRetry(retryTimeoutRef, processingRef, dispatch, jobId);
         return;
       }
 

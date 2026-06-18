@@ -19,6 +19,7 @@ import {
 
 const STATUS_LABELS: Record<GenJobStatus, string> = {
   queued: "Queued",
+  waiting: "Waiting",
   submitting: "Submitting",
   running: "Running",
   cancelling: "Cancelling",
@@ -54,6 +55,7 @@ function JobRow({
     job.status === "running" || job.status === "submitting" || job.status === "cancelling";
   const canCancel =
     job.status === "queued"
+    || job.status === "waiting"
     || job.status === "submitting"
     || job.status === "running"
     || job.status === "cancelling";
@@ -124,7 +126,7 @@ function JobRow({
             variant="ghost"
             size="icon-sm"
             aria-label={
-              job.status === "queued"
+              job.status === "queued" || job.status === "waiting"
                 ? "Remove from queue"
                 : job.status === "error" || job.status === "cancelled"
                   ? "Dismiss"
@@ -157,9 +159,15 @@ export function GenerationQueuePanel() {
   if (genQueue.length === 0) return null;
 
   const activeJob = genQueue.find(
-    (job) => job.status === "running" || job.status === "submitting" || job.status === "cancelling",
+    (job) =>
+      job.status === "running"
+      || job.status === "submitting"
+      || job.status === "cancelling"
+      || job.status === "waiting",
   );
-  const queuedCount = genQueue.filter((job) => job.status === "queued").length;
+  const queuedCount = genQueue.filter(
+    (job) => job.status === "queued" || job.status === "waiting",
+  ).length;
   const finishedCount = genQueue.filter(
     (job) => job.status === "done" || job.status === "error" || job.status === "cancelled",
   ).length;
@@ -176,7 +184,8 @@ export function GenerationQueuePanel() {
         <div className="flex items-center gap-2 min-w-0 flex-1">
           {(activeJob?.status === "running"
             || activeJob?.status === "submitting"
-            || activeJob?.status === "cancelling") && (
+            || activeJob?.status === "cancelling"
+            || activeJob?.status === "waiting") && (
             <Spinner className="size-3.5 shrink-0" />
           )}
           <span className="text-xs font-medium truncate">
@@ -217,8 +226,8 @@ export function GenerationQueuePanel() {
       )}
 
       {genQueueExpanded && (
-        <div className="border-t border-border/60">
-          <div className="flex items-center justify-between gap-2 px-4 py-2 bg-muted/30">
+        <div className="border-t border-border/60 flex flex-col min-h-0 max-h-[min(45dvh,360px)] overflow-hidden">
+          <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2 bg-muted/30">
             <span className="text-[11px] font-medium text-muted-foreground">
               Generation queue ({genQueue.length})
             </span>
@@ -256,21 +265,23 @@ export function GenerationQueuePanel() {
               )}
             </div>
           </div>
-          <ScrollArea className="max-h-52">
-            {genQueue.map((job) => (
-              <JobRow
-                key={job.id}
-                job={job}
-                onCancel={cancelJob}
-                onMoveUp={moveJobUp}
-                onMoveDown={moveJobDown}
-                canMoveUp={canMoveUp(job)}
-                canMoveDown={canMoveDown(job)}
-              />
-            ))}
+          <ScrollArea className="min-h-0 flex-1">
+            <div role="list" aria-label="Generation queue items">
+              {genQueue.map((job) => (
+                <JobRow
+                  key={job.id}
+                  job={job}
+                  onCancel={cancelJob}
+                  onMoveUp={moveJobUp}
+                  onMoveDown={moveJobDown}
+                  canMoveUp={canMoveUp(job)}
+                  canMoveDown={canMoveDown(job)}
+                />
+              ))}
+            </div>
           </ScrollArea>
           {!activeJob && queuedCount > 0 && (
-            <p className="px-4 py-2 text-[11px] text-muted-foreground border-t border-border/60">
+            <p className="shrink-0 px-4 py-2 text-[11px] text-muted-foreground border-t border-border/60">
               Waiting to start…
             </p>
           )}

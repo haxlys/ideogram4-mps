@@ -41,6 +41,7 @@ export interface ImageEntry {
 
 export type GenJobStatus =
   | "queued"
+  | "waiting"
   | "submitting"
   | "running"
   | "cancelling"
