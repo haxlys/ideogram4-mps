@@ -29,7 +29,7 @@ width, height, preset, seed, and output format.
 ## Legacy PyTorch/MPS Runtime
 
 The previous PyTorch/MPS implementation is preserved on the
-[`legacy/pytorch-mps`](https://github.com/haxlys/ideogram4-mps/tree/legacy/pytorch-mps)
+[`legacy/pytorch-mps`](https://github.com/haxlys/ideogram4-mlx/tree/legacy/pytorch-mps)
 branch. Use that branch if you need the old direct `torch`/MPS runtime,
 FP8 dequant loading path, MPS scheduler patching, MPS warmup behavior, or the
 old `ideogram4_mps.py` CLI.
