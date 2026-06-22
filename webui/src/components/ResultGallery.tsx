@@ -53,6 +53,7 @@ export function ResultGallery() {
   const confirm = useConfirm();
   const { state, dispatch } = useAppState();
   const [previewImage, setPreviewImage] = useState<ImageEntry | null>(null);
+  const [previewImages, setPreviewImages] = useState<ImageEntry[]>([]);
   const [orphans, setOrphans] = useState<ImageEntry[]>([]);
   const [stats, setStats] = useState<ImageStats | null>(null);
   const [orphansOpen, setOrphansOpen] = useState(false);
@@ -84,6 +85,11 @@ export function ResultGallery() {
     };
   }, [dispatch, state.historyRefresh, state.favoritesRefresh]);
 
+  const openPreview = useCallback((image: ImageEntry, images: ImageEntry[]) => {
+    setPreviewImages(images);
+    setPreviewImage(image);
+  }, []);
+
   const handleDeleteImage = useCallback(async (
     image: ImageEntry,
     options?: { orphan?: boolean },
@@ -104,6 +110,7 @@ export function ResultGallery() {
       await deleteImage(image.id);
       dispatch({ type: "REMOVE_IMAGE", imageId: image.id });
       setOrphans((prev) => prev.filter((img) => img.id !== image.id));
+      setPreviewImages((prev) => prev.filter((entry) => entry.id !== image.id));
       setPreviewImage((prev) => (prev?.id === image.id ? null : prev));
       setStats((prev) => {
         if (!prev) return prev;
@@ -170,7 +177,7 @@ export function ResultGallery() {
       ) : (
         <GalleryGrid
           images={state.images}
-          onPreview={setPreviewImage}
+          onPreview={(img) => openPreview(img, state.images)}
           onDelete={(img) => void handleDeleteImage(img)}
         />
       )}
@@ -245,7 +252,7 @@ export function ResultGallery() {
                         ? `Unlinked image (stale prompt #${img.prompt_id})`
                         : "Preview unlinked image"
                     }
-                    onPreview={() => setPreviewImage(img)}
+                    onPreview={() => openPreview(img, orphans)}
                     onDelete={() => void handleDeleteImage(img, { orphan: true })}
                     deleteLabel="Delete unlinked image"
                   />
@@ -258,9 +265,14 @@ export function ResultGallery() {
 
       <ImagePreviewLightbox
         image={previewImage}
+        images={previewImages}
+        onImageChange={setPreviewImage}
         open={previewImage != null}
         onOpenChange={(open) => {
-          if (!open) setPreviewImage(null);
+          if (!open) {
+            setPreviewImage(null);
+            setPreviewImages([]);
+          }
         }}
       />
     </>

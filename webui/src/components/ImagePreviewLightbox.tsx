@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -6,19 +6,63 @@ import { ImageLoraMeta } from "@/components/ImageLoraMeta";
 import { downloadImageFile } from "@/lib/image";
 import type { ImageEntry } from "@/state/types";
 import { FavoriteButton } from "@/components/FavoriteButton";
-import { Download, History, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, History, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface ImagePreviewLightboxProps {
   image: ImageEntry | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  images?: ImageEntry[];
+  onImageChange?: (image: ImageEntry) => void;
 }
 
-export function ImagePreviewLightbox({ image, open, onOpenChange }: ImagePreviewLightboxProps) {
+export function ImagePreviewLightbox({
+  image,
+  open,
+  onOpenChange,
+  images,
+  onImageChange,
+}: ImagePreviewLightboxProps) {
   const navigate = useNavigate();
   const alt = image?.hld?.slice(0, 120) ?? "Generated image";
   const promptId = image?.historyLinked ? image.prompt_id : null;
+
+  const currentIndex = useMemo(() => {
+    if (!image || !images?.length) return -1;
+    return images.findIndex((entry) => entry.id === image.id);
+  }, [image, images]);
+
+  const canNavigate = images != null && images.length > 1 && onImageChange != null && currentIndex >= 0;
+  const canGoPrevious = canNavigate && currentIndex > 0;
+  const canGoNext = canNavigate && currentIndex < images.length - 1;
+
+  const goToPrevious = useCallback(() => {
+    if (!canGoPrevious || !images || !onImageChange) return;
+    onImageChange(images[currentIndex - 1]!);
+  }, [canGoPrevious, currentIndex, images, onImageChange]);
+
+  const goToNext = useCallback(() => {
+    if (!canGoNext || !images || !onImageChange) return;
+    onImageChange(images[currentIndex + 1]!);
+  }, [canGoNext, currentIndex, images, onImageChange]);
+
+  useEffect(() => {
+    if (!open || !canNavigate) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goToPrevious();
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goToNext();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, canNavigate, goToNext, goToPrevious]);
 
   const handleDownload = useCallback(async () => {
     if (!image) return;
@@ -43,11 +87,20 @@ export function ImagePreviewLightbox({ image, open, onOpenChange }: ImagePreview
         className="fixed inset-0 top-0 left-0 z-50 flex h-dvh w-dvw max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-0 bg-transparent p-0 shadow-none ring-0 duration-200 sm:max-w-none"
       >
         <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <p className="min-w-0 truncate text-[12px] text-white/70">
-            {image?.hld ? image.hld.slice(0, 80) : "Image preview"}
-          </p>
+          <div className="min-w-0">
+            <p className="truncate text-[12px] text-white/70">
+              {image?.hld ? image.hld.slice(0, 80) : "Image preview"}
+            </p>
+            {canNavigate && (
+              <p className="mt-0.5 text-[10px] tabular-nums text-white/45">
+                {currentIndex + 1} / {images.length}
+              </p>
+            )}
+          </div>
           <div className="flex shrink-0 items-center gap-1">
-            <span className="mr-1 hidden text-[10px] text-white/45 sm:inline">Esc to close</span>
+            <span className="mr-1 hidden text-[10px] text-white/45 sm:inline">
+              {canNavigate ? "← → navigate · Esc to close" : "Esc to close"}
+            </span>
             {image && (
               <FavoriteButton
                 imageId={image.id}
@@ -87,15 +140,40 @@ export function ImagePreviewLightbox({ image, open, onOpenChange }: ImagePreview
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 items-center justify-center px-3 pb-2 sm:px-6">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center px-3 pb-2 sm:px-14">
+          {canGoPrevious && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute top-1/2 left-2 z-10 -translate-y-1/2 bg-black/35 text-white hover:bg-black/55 hover:text-white sm:left-4"
+              aria-label="Previous image"
+              onClick={goToPrevious}
+            >
+              <ChevronLeft className="size-5" />
+            </Button>
+          )}
           {image && (
             <img
+              key={image.id}
               src={image.url}
               alt={alt}
               className="max-h-[calc(100dvh-9.5rem)] max-w-full cursor-zoom-out rounded-md object-contain shadow-2xl shadow-black/50"
               style={{ width: "auto" }}
               fetchPriority="high"
             />
+          )}
+          {canGoNext && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute top-1/2 right-2 z-10 -translate-y-1/2 bg-black/35 text-white hover:bg-black/55 hover:text-white sm:right-4"
+              aria-label="Next image"
+              onClick={goToNext}
+            >
+              <ChevronRight className="size-5" />
+            </Button>
           )}
         </div>
 
