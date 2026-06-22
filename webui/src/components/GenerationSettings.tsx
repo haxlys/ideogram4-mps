@@ -4,12 +4,6 @@ import { useAppState } from "@/state/context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -177,98 +171,91 @@ export function GenerationSettings() {
           </div>
         </div>
 
-        <div className="border-t border-border pt-1">
-          <Accordion>
-            <AccordionItem value="advanced" className="border-b-0">
-              <AccordionTrigger className="py-2.5 text-foreground">
-                Advanced options
-              </AccordionTrigger>
-              <AccordionContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="customW" className="text-body-sm font-medium">Width</Label>
-                    <Input
-                      id="customW"
-                      type="number"
-                      className="h-8"
-                      min={MIN_DIMENSION}
-                      max={MAX_DIMENSION}
-                      step={DIMENSION_STEP}
-                      value={form.w}
-                      onChange={(e) => {
-                        let v = Number(e.target.value);
-                        v = snap128(v);
-                        dispatch({ type: "SET_FORM", form: { w: v } });
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="customH" className="text-body-sm font-medium">Height</Label>
-                    <Input
-                      id="customH"
-                      type="number"
-                      className="h-8"
-                      min={MIN_DIMENSION}
-                      max={MAX_DIMENSION}
-                      step={DIMENSION_STEP}
-                      value={form.h}
-                      onChange={(e) => {
-                        let v = Number(e.target.value);
-                        v = snap128(v);
-                        dispatch({ type: "SET_FORM", form: { h: v } });
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="format" className="text-body-sm font-medium">Format</Label>
-                    <Select
-                      value={form.format}
-                      onValueChange={(v) => v &&
-                        dispatch({ type: "SET_FORM", form: { format: v as FormState["format"] } })
-                      }
-                    >
-                      <SelectTrigger id="format" className="h-8 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="webp">WebP (lossless)</SelectItem>
-                        <SelectItem value="png">PNG</SelectItem>
-                        <SelectItem value="jpeg">JPEG</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-                    <Label htmlFor="seed" className="text-body-sm font-medium">Seed</Label>
-                    <div className="flex gap-1">
-                      <Input
-                        id="seed"
-                        className="h-8"
-                        value={form.seed}
-                        onChange={(e) =>
-                          dispatch({ type: "SET_FORM", form: { seed: e.target.value } })
-                        }
-                        placeholder="random"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-8 shrink-0"
-                        onClick={() =>
-                          dispatch({ type: "SET_FORM", form: { seed: randomSeedString() } })
-                        }
-                        title="Random seed"
-                      >
-                        <Shuffle className="size-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+        <div className="space-y-4 border-t border-border pt-4">
+          <h3 className="text-body-sm font-medium text-foreground">Advanced options</h3>
 
-                <LoRASelector />
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="customW" className="text-body-sm font-medium">Width</Label>
+              <Input
+                id="customW"
+                type="number"
+                className="h-8"
+                min={MIN_DIMENSION}
+                max={MAX_DIMENSION}
+                step={DIMENSION_STEP}
+                value={form.w}
+                onChange={(e) => {
+                  let v = Number(e.target.value);
+                  v = snap128(v);
+                  dispatch({ type: "SET_FORM", form: { w: v } });
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="customH" className="text-body-sm font-medium">Height</Label>
+              <Input
+                id="customH"
+                type="number"
+                className="h-8"
+                min={MIN_DIMENSION}
+                max={MAX_DIMENSION}
+                step={DIMENSION_STEP}
+                value={form.h}
+                onChange={(e) => {
+                  let v = Number(e.target.value);
+                  v = snap128(v);
+                  dispatch({ type: "SET_FORM", form: { h: v } });
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="format" className="text-body-sm font-medium">Format</Label>
+              <Select
+                value={form.format}
+                onValueChange={(v) => v &&
+                  dispatch({ type: "SET_FORM", form: { format: v as FormState["format"] } })
+                }
+              >
+                <SelectTrigger id="format" className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="webp">WebP (lossless)</SelectItem>
+                  <SelectItem value="png">PNG</SelectItem>
+                  <SelectItem value="jpeg">JPEG</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+              <Label htmlFor="seed" className="text-body-sm font-medium">Seed</Label>
+              <div className="flex gap-1">
+                <Input
+                  id="seed"
+                  className="h-8"
+                  value={form.seed}
+                  onChange={(e) =>
+                    dispatch({ type: "SET_FORM", form: { seed: e.target.value } })
+                  }
+                  placeholder="random"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-8 shrink-0"
+                  onClick={() =>
+                    dispatch({ type: "SET_FORM", form: { seed: randomSeedString() } })
+                  }
+                  title="Random seed"
+                >
+                  <Shuffle className="size-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <LoRASelector />
         </div>
       </div>
     </section>
