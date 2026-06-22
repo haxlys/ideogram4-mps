@@ -13,6 +13,7 @@ import {
   partitionJobsForDisplay,
   type GenQueueFilter,
 } from "@/lib/queue";
+import { cn } from "@/lib/utils";
 import type { GenJob, GenJobStatus, ImageEntry } from "@/state/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -355,9 +356,12 @@ export function GenerationQueuePanel() {
                   <Button
                     key={value}
                     type="button"
-                    variant={queueFilter === value ? "secondary" : "ghost"}
+                    variant={queueFilter === value ? "default" : "ghost"}
                     size="sm"
-                    className="h-6 px-2 text-[10px] font-medium"
+                    className={cn(
+                      "h-6 px-2 text-[10px] font-medium",
+                      queueFilter !== value && "text-muted-foreground",
+                    )}
                     aria-pressed={queueFilter === value}
                     onClick={() => setQueueFilter(value)}
                   >

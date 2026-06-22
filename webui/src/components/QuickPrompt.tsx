@@ -289,8 +289,8 @@ export function QuickPrompt() {
           </p>
 
           <Button
-            variant="secondary"
-            className="w-full"
+            variant="outline"
+            className="w-full text-foreground"
             onClick={handleExpand}
             disabled={quickState.expanding || Boolean(status && !status.configured)}
           >

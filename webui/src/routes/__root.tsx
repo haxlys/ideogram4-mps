@@ -113,7 +113,7 @@ function RootLayout() {
                     <h1 className="text-body font-semibold tracking-[-0.02em] text-foreground truncate">
                       Ideogram 4
                     </h1>
-                    <span className="rounded-md bg-foreground px-1 py-px text-caption font-bold uppercase text-background leading-none shrink-0">
+                    <span className="rounded-md bg-primary px-1 py-px text-caption font-bold uppercase text-primary-foreground leading-none shrink-0">
                       MLX
                     </span>
                   </div>

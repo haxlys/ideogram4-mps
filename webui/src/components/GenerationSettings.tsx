@@ -112,7 +112,7 @@ export function GenerationSettings() {
               return (
                 <Button
                   key={name}
-                  variant={active ? "default" : "secondary"}
+                  variant={active ? "default" : "outline"}
                   size="sm"
                   className="h-9 text-caption font-medium w-full justify-start"
                   onClick={() => dispatch({ type: "SET_FORM", form: { w, h } })}

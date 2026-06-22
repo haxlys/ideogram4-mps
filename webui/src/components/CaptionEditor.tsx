@@ -49,8 +49,8 @@ export function CaptionEditor() {
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors",
                 tab === id
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-card text-foreground shadow-sm ring-1 ring-border"
+                  : "text-muted-foreground hover:bg-card/80 hover:text-foreground",
               )}
               onClick={() => setTab(id)}
             >
