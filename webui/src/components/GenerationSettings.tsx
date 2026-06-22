@@ -3,7 +3,6 @@ import { presetLabel } from "@/lib/presetLabels";
 import { useAppState } from "@/state/context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Accordion,
   AccordionContent,
@@ -29,7 +28,7 @@ import {
 } from "@/state/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Shuffle } from "lucide-react";
+import { Clock, Shuffle } from "lucide-react";
 import { LoRASelector } from "./LoRASelector";
 
 const PRESETS: FormState["preset"][] = ["V4_TURBO_12", "V4_DEFAULT_20", "V4_QUALITY_48"];
@@ -46,7 +45,7 @@ function formatTime(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
-function RatioPreview({ w, h, size = 56 }: { w: number; h: number; size?: number }) {
+function RatioPreview({ w, h, size = 44 }: { w: number; h: number; size?: number }) {
   const ratio = w / h;
   const width = ratio >= 1 ? size : size * ratio;
   const height = ratio >= 1 ? size / ratio : size;
@@ -54,16 +53,19 @@ function RatioPreview({ w, h, size = 56 }: { w: number; h: number; size?: number
   const isTall = ratio <= 0.6;
 
   return (
-    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+    <div
+      className="relative flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size }}
+    >
       <div
-        className="rounded-[3px] border border-foreground/30 transition-colors duration-200"
+        className="rounded-[3px] border border-foreground/30 bg-background transition-colors duration-200"
         style={{ width, height }}
       />
       <div
         className={cn(
-          "absolute inset-0 m-auto flex items-center justify-center text-caption font-mono tabular-nums text-muted-foreground",
-          isUltrawide && "tracking-widest scale-[0.85]",
-          isTall && "-rotate-90 scale-[0.85]",
+          "absolute inset-0 m-auto flex items-center justify-center text-[9px] font-mono tabular-nums text-muted-foreground",
+          isUltrawide && "scale-[0.8] tracking-widest",
+          isTall && "-rotate-90 scale-[0.8]",
         )}
       >
         {w}×{h}
@@ -79,6 +81,9 @@ export function GenerationSettings() {
   const genTime = estimateTime(form.w, form.h, steps);
   const loadTime = modelState !== "loaded" ? MLX_LOAD_ESTIMATE_SECONDS : 0;
   const totalTime = genTime + loadTime;
+  const estLabel = modelState !== "loaded"
+    ? `load ~${formatTime(loadTime)} + gen ${formatTime(genTime)}`
+    : `gen ${formatTime(genTime)}`;
 
   return (
     <section
@@ -93,40 +98,77 @@ export function GenerationSettings() {
       </div>
 
       <div className="space-y-4 p-4">
-        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/20 p-3">
-          <div className="flex items-center justify-center rounded-lg border border-border bg-background p-2.5 shadow-sm">
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3 md:flex-row md:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <RatioPreview w={form.w} h={form.h} />
+            <div className="min-w-0">
+              <p className="text-body-sm font-medium tabular-nums text-foreground">
+                {form.w}×{form.h}
+              </p>
+              <p className="text-caption text-muted-foreground">
+                {((form.w * form.h) / 1e6).toFixed(2)} MP · {(form.w / form.h).toFixed(2)}:1
+              </p>
+            </div>
           </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
-              {form.w}×{form.h} · {((form.w * form.h) / 1e6).toFixed(2)} MP
-            </p>
-            <p className="text-body-sm font-medium tabular-nums text-foreground">
-              {(form.w / form.h).toFixed(2)}:1 ratio
-            </p>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center md:shrink-0">
+            <div className="min-w-0 sm:w-44">
+              <Label htmlFor="preset" className="sr-only">Quality</Label>
+              <Select
+                value={form.preset}
+                onValueChange={(v) => v &&
+                  dispatch({ type: "SET_FORM", form: { preset: v as FormState["preset"] } })
+                }
+              >
+                <SelectTrigger id="preset" className="h-8 w-full bg-background text-body-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRESETS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {presetLabel(p)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div
+              className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-caption text-muted-foreground"
+              title={totalTime > genTime ? `${formatTime(totalTime)} total` : undefined}
+            >
+              <Clock className="size-3 shrink-0" />
+              <span className="font-mono tabular-nums text-foreground">{estLabel}</span>
+              {totalTime > genTime && (
+                <span className="hidden text-muted-foreground lg:inline">
+                  · {formatTime(totalTime)}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="space-y-2">
           <Label className="block text-body-sm font-medium">Aspect ratio</Label>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4">
             {RESOLUTION_PRESETS.map(({ name, w, h }) => {
               const active = form.w === w && form.h === h;
               const ratio = w / h;
-              const previewW = ratio >= 1 ? 20 : 20 * ratio;
-              const previewH = ratio >= 1 ? 20 / ratio : 20;
+              const previewW = ratio >= 1 ? 16 : 16 * ratio;
+              const previewH = ratio >= 1 ? 16 / ratio : 16;
+
               return (
                 <Button
                   key={name}
                   variant={active ? "default" : "outline"}
                   size="sm"
-                  className="h-9 text-caption font-medium w-full justify-start"
+                  className="h-8 justify-start px-2 text-caption font-medium"
                   onClick={() => dispatch({ type: "SET_FORM", form: { w, h } })}
                 >
                   <span
                     aria-hidden="true"
-                    className="mr-2 inline-block rounded-[2px] border border-current/30 shrink-0"
-                    style={{ width: previewW, height: previewH, minWidth: 6, minHeight: 6 }}
+                    className="mr-1.5 inline-block shrink-0 rounded-[2px] border border-current/30"
+                    style={{ width: previewW, height: previewH, minWidth: 5, minHeight: 5 }}
                   />
                   <span className="truncate">{name}</span>
                 </Button>
@@ -135,50 +177,20 @@ export function GenerationSettings() {
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="preset" className="text-body-sm font-medium">Quality</Label>
-          <Select
-            value={form.preset}
-            onValueChange={(v) => v &&
-              dispatch({ type: "SET_FORM", form: { preset: v as FormState["preset"] } })
-            }
-          >
-            <SelectTrigger id="preset">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PRESETS.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {presetLabel(p)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
-          <span className="text-caption text-muted-foreground">Est.</span>
-          <Badge variant="outline" className="text-caption font-mono">
-            {modelState !== "loaded" ? `load ~${formatTime(loadTime)} + gen ${formatTime(genTime)}` : `gen ${formatTime(genTime)}`}
-          </Badge>
-          {totalTime > genTime && (
-            <span className="ml-auto text-caption tabular-nums text-muted-foreground">
-              {formatTime(totalTime)} total
-            </span>
-          )}
-        </div>
-
         <div className="border-t border-border pt-1">
           <Accordion>
             <AccordionItem value="advanced" className="border-b-0">
-              <AccordionTrigger className="py-2.5 text-foreground">Advanced options</AccordionTrigger>
+              <AccordionTrigger className="py-2.5 text-foreground">
+                Advanced options
+              </AccordionTrigger>
               <AccordionContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="customW" className="text-body-sm font-medium">Width</Label>
                     <Input
                       id="customW"
                       type="number"
+                      className="h-8"
                       min={MIN_DIMENSION}
                       max={MAX_DIMENSION}
                       step={DIMENSION_STEP}
@@ -195,6 +207,7 @@ export function GenerationSettings() {
                     <Input
                       id="customH"
                       type="number"
+                      className="h-8"
                       min={MIN_DIMENSION}
                       max={MAX_DIMENSION}
                       step={DIMENSION_STEP}
@@ -206,50 +219,49 @@ export function GenerationSettings() {
                       }}
                     />
                   </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="format" className="text-body-sm font-medium">Format</Label>
-                  <Select
-                    value={form.format}
-                    onValueChange={(v) => v &&
-                      dispatch({ type: "SET_FORM", form: { format: v as FormState["format"] } })
-                    }
-                  >
-                    <SelectTrigger id="format">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="webp">WebP (lossless)</SelectItem>
-                      <SelectItem value="png">PNG</SelectItem>
-                      <SelectItem value="jpeg">JPEG</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="seed" className="text-body-sm font-medium">Seed</Label>
-                  <div className="flex gap-1">
-                    <Input
-                      id="seed"
-                      value={form.seed}
-                      onChange={(e) =>
-                        dispatch({ type: "SET_FORM", form: { seed: e.target.value } })
+                  <div className="space-y-1.5">
+                    <Label htmlFor="format" className="text-body-sm font-medium">Format</Label>
+                    <Select
+                      value={form.format}
+                      onValueChange={(v) => v &&
+                        dispatch({ type: "SET_FORM", form: { format: v as FormState["format"] } })
                       }
-                      placeholder="random"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0"
-                      onClick={() =>
-                        dispatch({ type: "SET_FORM", form: { seed: randomSeedString() } })
-                      }
-                      title="Random seed"
                     >
-                      <Shuffle className="size-4" />
-                    </Button>
+                      <SelectTrigger id="format" className="h-8 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="webp">WebP (lossless)</SelectItem>
+                        <SelectItem value="png">PNG</SelectItem>
+                        <SelectItem value="jpeg">JPEG</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                    <Label htmlFor="seed" className="text-body-sm font-medium">Seed</Label>
+                    <div className="flex gap-1">
+                      <Input
+                        id="seed"
+                        className="h-8"
+                        value={form.seed}
+                        onChange={(e) =>
+                          dispatch({ type: "SET_FORM", form: { seed: e.target.value } })
+                        }
+                        placeholder="random"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="size-8 shrink-0"
+                        onClick={() =>
+                          dispatch({ type: "SET_FORM", form: { seed: randomSeedString() } })
+                        }
+                        title="Random seed"
+                      >
+                        <Shuffle className="size-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
