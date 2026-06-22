@@ -245,7 +245,7 @@ export function GenerationQueuePanel() {
 
   return (
     <>
-    <div className="fixed inset-x-0 bottom-0 z-40 shrink-0 border-t border-border bg-background/95 shadow-elevated backdrop-blur-md">
+    <div className="shrink-0 border-t border-border bg-background/95 shadow-elevated backdrop-blur-md">
       <button
         type="button"
         className="flex w-full items-center gap-3 px-4 h-11 text-left hover:bg-muted/40 transition-colors"
