@@ -204,6 +204,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         images: state.images.filter((img) => img.id !== action.imageId),
         resultImage: state.resultImage?.id === action.imageId ? null : state.resultImage,
+        genQueue: state.genQueue.map((job) =>
+          job.result?.id === action.imageId ? { ...job, result: undefined } : job,
+        ),
       };
 
     case "REMOVE_IMAGES_BY_PROMPT":
@@ -211,6 +214,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         images: state.images.filter((img) => img.prompt_id !== action.promptId),
         resultImage: state.resultImage?.prompt_id === action.promptId ? null : state.resultImage,
+        genQueue: state.genQueue.map((job) =>
+          job.promptId === action.promptId && job.result
+            ? { ...job, result: undefined }
+            : job,
+        ),
       };
 
     case "SHOW_RESULT":

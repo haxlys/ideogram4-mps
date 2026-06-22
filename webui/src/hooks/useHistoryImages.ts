@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getImages } from "@/api/client";
 import {
   findLatestDoneJobResult,
@@ -112,6 +112,11 @@ export function useHistoryImages() {
         && !job.historyLinkFailed
         && !merged.some((img) => img.id === job.result!.id)
       ) {
+        const resultId = job.result!.id;
+        const inApiSnapshot = items.some((item) => item.id === resultId);
+        // Drop stale queue results once API data is current (e.g. deleted images).
+        if (!loading && !inApiSnapshot) continue;
+
         merged.unshift({
           ...job.result,
           createdAt: new Date(job.createdAt).toISOString(),
@@ -119,7 +124,17 @@ export function useHistoryImages() {
       }
     }
     return merged;
-  }, [items, promptId, state.genQueue]);
+  }, [items, loading, promptId, state.genQueue]);
+
+  const removeImageLocally = useCallback((imageId: number) => {
+    setSnapshot((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        items: prev.items.filter((item) => item.id !== imageId),
+      };
+    });
+  }, []);
 
   const previewImageId = useMemo(() => {
     if (promptId == null) return null;
@@ -144,5 +159,6 @@ export function useHistoryImages() {
     images,
     previewImageId,
     loading,
+    removeImageLocally,
   };
 }

@@ -28,7 +28,7 @@ function formatImageTimestamp(createdAt: string): string {
 export function HistoryOutputPanel() {
   const confirm = useConfirm();
   const { state, dispatch } = useAppState();
-  const { promptId, images, previewImageId, loading } = useHistoryImages();
+  const { promptId, images, previewImageId, loading, removeImageLocally } = useHistoryImages();
   const [previewImage, setPreviewImage] = useState<HistoryImageItem | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
@@ -55,6 +55,8 @@ export function HistoryOutputPanel() {
     try {
       await deleteImage(image.id);
       dispatch({ type: "REMOVE_IMAGE", imageId: image.id });
+      removeImageLocally(image.id);
+      setPreviewImage((prev) => (prev?.id === image.id ? null : prev));
 
       if (state.resultImage?.id === image.id) {
         const remaining = images.filter((entry) => entry.id !== image.id);
@@ -72,7 +74,7 @@ export function HistoryOutputPanel() {
     } catch {
       toast.error("Failed to delete image");
     }
-  }, [confirm, dispatch, images, promptId, state.resultImage]);
+  }, [confirm, dispatch, images, promptId, removeImageLocally, state.resultImage]);
 
   const handleDownload = useCallback(async () => {
     if (!activeImage) return;
