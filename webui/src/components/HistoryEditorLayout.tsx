@@ -24,7 +24,7 @@ export function HistoryEditorLayout() {
             <PromptSection />
           </div>
 
-          <aside className="min-w-0 w-full md:w-[min(100%,380px)] md:shrink-0 md:sticky md:top-[var(--header-height)] md:max-h-[calc(100dvh-var(--header-height))] md:overflow-y-auto md:py-1">
+          <aside className="min-w-0 w-full md:w-[min(100%,380px)] md:shrink-0 md:sticky md:top-[var(--header-height)] md:max-h-[calc(100dvh-var(--header-height))] md:overflow-y-auto">
             <HistoryOutputPanel />
           </aside>
         </div>
