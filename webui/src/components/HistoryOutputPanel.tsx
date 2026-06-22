@@ -269,7 +269,7 @@ export function HistoryOutputPanel() {
       </section>
 
       <ImagePreviewLightbox
-        image={activeImage ?? previewImage}
+        image={previewImage ?? activeImage}
         open={lightboxOpen || previewImage != null}
         onOpenChange={(open) => {
           if (!open) {
