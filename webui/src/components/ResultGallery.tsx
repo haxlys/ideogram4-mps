@@ -21,9 +21,13 @@ import { toast } from "sonner";
 function GalleryGrid({
   images,
   onPreview,
+  onDelete,
+  deleteLabel = "Delete image",
 }: {
   images: ImageEntry[];
   onPreview: (img: ImageEntry) => void;
+  onDelete?: (img: ImageEntry) => void;
+  deleteLabel?: string;
 }) {
   return (
     <MasonryGallery>
@@ -37,6 +41,8 @@ function GalleryGrid({
           caption={img.hld?.slice(0, 32)}
           previewHint={`Preview ${img.hld?.slice(0, 40) ?? "image"}`}
           onPreview={() => onPreview(img)}
+          onDelete={onDelete ? () => onDelete(img) : undefined}
+          deleteLabel={deleteLabel}
         />
       ))}
     </MasonryGallery>
@@ -78,24 +84,40 @@ export function ResultGallery() {
     };
   }, [dispatch, state.historyRefresh, state.favoritesRefresh]);
 
-  const handleDeleteOrphan = useCallback(async (imageId: number) => {
+  const handleDeleteImage = useCallback(async (
+    image: ImageEntry,
+    options?: { orphan?: boolean },
+  ) => {
     const proceed = await confirm({
-      title: "Delete unlinked image?",
-      description: "This cannot be undone.",
+      title: options?.orphan
+        ? "Delete unlinked image?"
+        : `Delete image #${image.id}?`,
+      description: options?.orphan
+        ? "This cannot be undone."
+        : "This permanently removes the image from the gallery and its history entry.",
       confirmLabel: "Delete",
       destructive: true,
     });
     if (!proceed) return;
+
     try {
-      await deleteImage(imageId);
-      dispatch({ type: "REMOVE_IMAGE", imageId });
-      setOrphans((prev) => prev.filter((img) => img.id !== imageId));
-      setStats((prev) =>
-        prev
-          ? { ...prev, total: prev.total - 1, orphans: Math.max(0, prev.orphans - 1) }
-          : prev,
-      );
-      toast.success("Unlinked image deleted");
+      await deleteImage(image.id);
+      dispatch({ type: "REMOVE_IMAGE", imageId: image.id });
+      setOrphans((prev) => prev.filter((img) => img.id !== image.id));
+      setPreviewImage((prev) => (prev?.id === image.id ? null : prev));
+      setStats((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          total: Math.max(0, prev.total - 1),
+          orphans: options?.orphan
+            ? Math.max(0, prev.orphans - 1)
+            : prev.orphans,
+        };
+      });
+      dispatch({ type: "REFRESH_HISTORY" });
+      dispatch({ type: "REFRESH_FAVORITES" });
+      toast.success(options?.orphan ? "Unlinked image deleted" : "Image deleted");
     } catch {
       toast.error("Failed to delete image");
     }
@@ -146,7 +168,11 @@ export function ResultGallery() {
           </p>
         </div>
       ) : (
-        <GalleryGrid images={state.images} onPreview={setPreviewImage} />
+        <GalleryGrid
+          images={state.images}
+          onPreview={setPreviewImage}
+          onDelete={(img) => void handleDeleteImage(img)}
+        />
       )}
 
       {orphanCount > 0 && (
@@ -220,7 +246,7 @@ export function ResultGallery() {
                         : "Preview unlinked image"
                     }
                     onPreview={() => setPreviewImage(img)}
-                    onDelete={() => void handleDeleteOrphan(img.id)}
+                    onDelete={() => void handleDeleteImage(img, { orphan: true })}
                     deleteLabel="Delete unlinked image"
                   />
                 ))}
