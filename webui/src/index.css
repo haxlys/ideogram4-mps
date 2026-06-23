@@ -166,6 +166,13 @@
   .text-generate {
     color: var(--generate);
   }
+
+  @media (max-width: 1023px) {
+    [data-slot="scroll-area-viewport"],
+    main .overflow-auto {
+      scroll-padding-bottom: 6.5rem;
+    }
+  }
 }
 
 @keyframes progress-indeterminate {

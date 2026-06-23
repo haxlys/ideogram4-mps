@@ -6,7 +6,7 @@ export const Route = createFileRoute("/favorites")({
 
 function FavoritesLayout() {
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex min-h-0 flex-1 flex-col">
       <Outlet />
     </div>
   );
