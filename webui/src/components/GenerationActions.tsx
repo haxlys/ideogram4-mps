@@ -14,7 +14,9 @@ export function GenerationActions({ className }: GenerationActionsProps) {
     return (
       <div className={cn("flex items-center justify-end", className)}>
         <Button
-          className="h-10 min-w-[9.5rem] px-5 text-body-sm font-semibold tracking-[-0.01em] shadow-card"
+          variant="generate"
+          size="lg"
+          className="h-11 min-w-[10rem] flex-1 px-6 text-body-sm font-semibold tracking-[-0.01em] sm:flex-none"
           disabled={!canGenerate}
           onClick={() => void enqueue({ historyLink: "new" })}
         >
@@ -36,7 +38,9 @@ export function GenerationActions({ className }: GenerationActionsProps) {
       </p>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button
-          className="h-10 min-w-[9.5rem] px-4 text-body-sm font-semibold tracking-[-0.01em]"
+          variant="generate"
+          size="lg"
+          className="h-11 min-w-[10rem] px-4 text-body-sm font-semibold tracking-[-0.01em]"
           disabled={!canGenerate}
           onClick={() => void enqueue({ historyLink: "regenerate", newSeed: true })}
         >

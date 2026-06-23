@@ -12,7 +12,7 @@ function GalleryPage() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <div className="mx-auto max-w-6xl px-4 py-6 lg:py-8">
+      <div className="mx-auto max-w-6xl px-4 py-5 pb-6 md:py-7 md:pb-8">
         <div className="mb-6 flex items-center gap-3">
           <h2 className="text-title font-semibold text-foreground">
             Gallery

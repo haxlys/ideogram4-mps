@@ -51,6 +51,13 @@ const initialQuickPromptState: QuickPromptState = {
   settings: { checked: false, status: null, error: null },
 };
 
+const PROMPT_SUGGESTIONS = [
+  "A candid medium shot of a woman in hanbok drinking tea in an autumn garden",
+  "Minimalist product photo of a ceramic mug on a marble surface, soft window light",
+  "Editorial portrait of a jazz musician on stage, dramatic rim lighting, film grain",
+  "Flat lay of design tools on a warm wooden desk, overhead view, muted palette",
+] as const;
+
 function quickPromptReducer(state: QuickPromptState, action: QuickPromptAction): QuickPromptState {
   switch (action.type) {
     case "SET_TEXT":
@@ -221,13 +228,29 @@ export function QuickPrompt() {
           <div className="space-y-1.5">
             <p className="text-body-sm font-medium">Describe your image</p>
             <Textarea
-              placeholder="Describe your image in natural language… e.g. a woman in hanbok drinking tea in an autumn garden"
+              placeholder="Describe your image in natural language…"
               value={quickState.text}
               onChange={(e) => quickDispatch({ type: "SET_TEXT", text: e.target.value })}
-              className="min-h-[160px] resize-y text-body"
+              className="min-h-[140px] resize-y text-body leading-relaxed"
               disabled={quickState.expanding}
             />
           </div>
+
+          {quickState.text.trim().length === 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {PROMPT_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  className="max-w-[min(100%,18rem)] truncate rounded-full border border-border bg-background px-2.5 py-1 text-left text-caption text-muted-foreground transition-colors hover:border-generate/30 hover:bg-generate-muted hover:text-foreground"
+                  onClick={() => quickDispatch({ type: "SET_TEXT", text: suggestion })}
+                  disabled={quickState.expanding}
+                >
+                  {suggestion.length > 48 ? `${suggestion.slice(0, 48)}…` : suggestion}
+                </button>
+              ))}
+            </div>
+          )}
 
           <input
             ref={fileRef}

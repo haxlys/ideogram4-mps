@@ -24,6 +24,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Clock, Shuffle } from "lucide-react";
 import { LoRASelector } from "./LoRASelector";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 const PRESETS: FormState["preset"][] = ["V4_TURBO_12", "V4_DEFAULT_20", "V4_QUALITY_48"];
 
@@ -154,9 +160,12 @@ export function GenerationSettings() {
               return (
                 <Button
                   key={name}
-                  variant={active ? "default" : "outline"}
+                  variant={active ? "generate" : "outline"}
                   size="sm"
-                  className="h-8 justify-start px-2 text-caption font-medium"
+                  className={cn(
+                    "h-9 justify-start px-2.5 text-caption font-medium",
+                    !active && "hover:border-generate/25 hover:bg-generate-muted/50",
+                  )}
                   onClick={() => dispatch({ type: "SET_FORM", form: { w, h } })}
                 >
                   <span
@@ -171,92 +180,97 @@ export function GenerationSettings() {
           </div>
         </div>
 
-        <div className="space-y-4 border-t border-border pt-4">
-          <h3 className="text-body-sm font-medium text-foreground">Advanced options</h3>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="customW" className="text-body-sm font-medium">Width</Label>
-              <Input
-                id="customW"
-                type="number"
-                className="h-8"
-                min={MIN_DIMENSION}
-                max={MAX_DIMENSION}
-                step={DIMENSION_STEP}
-                value={form.w}
-                onChange={(e) => {
-                  let v = Number(e.target.value);
-                  v = snap128(v);
-                  dispatch({ type: "SET_FORM", form: { w: v } });
-                }}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="customH" className="text-body-sm font-medium">Height</Label>
-              <Input
-                id="customH"
-                type="number"
-                className="h-8"
-                min={MIN_DIMENSION}
-                max={MAX_DIMENSION}
-                step={DIMENSION_STEP}
-                value={form.h}
-                onChange={(e) => {
-                  let v = Number(e.target.value);
-                  v = snap128(v);
-                  dispatch({ type: "SET_FORM", form: { h: v } });
-                }}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="format" className="text-body-sm font-medium">Format</Label>
-              <Select
-                value={form.format}
-                onValueChange={(v) => v &&
-                  dispatch({ type: "SET_FORM", form: { format: v as FormState["format"] } })
-                }
-              >
-                <SelectTrigger id="format" className="h-8 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="webp">WebP (lossless)</SelectItem>
-                  <SelectItem value="png">PNG</SelectItem>
-                  <SelectItem value="jpeg">JPEG</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-              <Label htmlFor="seed" className="text-body-sm font-medium">Seed</Label>
-              <div className="flex gap-1">
-                <Input
-                  id="seed"
-                  className="h-8"
-                  value={form.seed}
-                  onChange={(e) =>
-                    dispatch({ type: "SET_FORM", form: { seed: e.target.value } })
-                  }
-                  placeholder="random"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="size-8 shrink-0"
-                  onClick={() =>
-                    dispatch({ type: "SET_FORM", form: { seed: randomSeedString() } })
-                  }
-                  title="Random seed"
-                >
-                  <Shuffle className="size-3.5" />
-                </Button>
+        <Accordion defaultValue={[]}>
+          <AccordionItem value="advanced" className="border-t border-border pt-1">
+            <AccordionTrigger className="py-3 text-body-sm font-medium hover:no-underline">
+              Advanced options
+            </AccordionTrigger>
+            <AccordionContent className="space-y-4 pb-1">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="customW" className="text-body-sm font-medium">Width</Label>
+                  <Input
+                    id="customW"
+                    type="number"
+                    className="h-8"
+                    min={MIN_DIMENSION}
+                    max={MAX_DIMENSION}
+                    step={DIMENSION_STEP}
+                    value={form.w}
+                    onChange={(e) => {
+                      let v = Number(e.target.value);
+                      v = snap128(v);
+                      dispatch({ type: "SET_FORM", form: { w: v } });
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="customH" className="text-body-sm font-medium">Height</Label>
+                  <Input
+                    id="customH"
+                    type="number"
+                    className="h-8"
+                    min={MIN_DIMENSION}
+                    max={MAX_DIMENSION}
+                    step={DIMENSION_STEP}
+                    value={form.h}
+                    onChange={(e) => {
+                      let v = Number(e.target.value);
+                      v = snap128(v);
+                      dispatch({ type: "SET_FORM", form: { h: v } });
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="format" className="text-body-sm font-medium">Format</Label>
+                  <Select
+                    value={form.format}
+                    onValueChange={(v) => v &&
+                      dispatch({ type: "SET_FORM", form: { format: v as FormState["format"] } })
+                    }
+                  >
+                    <SelectTrigger id="format" className="h-8 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="webp">WebP (lossless)</SelectItem>
+                      <SelectItem value="png">PNG</SelectItem>
+                      <SelectItem value="jpeg">JPEG</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                  <Label htmlFor="seed" className="text-body-sm font-medium">Seed</Label>
+                  <div className="flex gap-1">
+                    <Input
+                      id="seed"
+                      className="h-8"
+                      value={form.seed}
+                      onChange={(e) =>
+                        dispatch({ type: "SET_FORM", form: { seed: e.target.value } })
+                      }
+                      placeholder="random"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-8 shrink-0"
+                      onClick={() =>
+                        dispatch({ type: "SET_FORM", form: { seed: randomSeedString() } })
+                      }
+                      title="Random seed"
+                    >
+                      <Shuffle className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <LoRASelector />
-        </div>
+              <LoRASelector />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
     </section>
   );

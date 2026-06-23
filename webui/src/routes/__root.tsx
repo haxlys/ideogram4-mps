@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { createRootRoute, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { useAppState } from "@/state/context";
 import { DEFAULT_FORM } from "@/state/types";
@@ -23,29 +24,32 @@ export const Route = createRootRoute({
 function SidebarNavLink({
   to,
   active,
+  onNavigate,
   children,
 }: {
   to: string;
   active: boolean;
+  onNavigate?: () => void;
   children: React.ReactNode;
 }) {
   return (
     <Link
       to={to}
+      onClick={onNavigate}
       className={cn(
-        "relative flex items-center h-8 px-3 text-body-sm font-medium rounded-lg transition-colors hover:bg-accent text-foreground no-underline",
-        active && "bg-accent text-foreground",
+        "relative flex h-8 items-center rounded-lg px-3 text-body-sm font-medium text-foreground no-underline transition-colors hover:bg-accent",
+        active && "bg-generate-muted font-medium text-foreground",
       )}
     >
       {active && (
-        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-foreground" />
+        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-generate" />
       )}
       {children}
     </Link>
   );
 }
 
-function SidebarNavLinks() {
+function SidebarNavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const { entries } = useFavorites();
   const matchRoute = useMatchRoute();
   const galleryActive = Boolean(matchRoute({ to: "/gallery" }));
@@ -56,11 +60,11 @@ function SidebarNavLinks() {
 
   return (
     <nav className="space-y-0.5" aria-label="Main navigation">
-      <SidebarNavLink to="/gallery" active={galleryActive}>
+      <SidebarNavLink to="/gallery" active={galleryActive} onNavigate={onNavigate}>
         <LayoutGrid className="size-3.5 mr-2" />
         Gallery
       </SidebarNavLink>
-      <SidebarNavLink to="/favorites" active={favoritesActive}>
+      <SidebarNavLink to="/favorites" active={favoritesActive} onNavigate={onNavigate}>
         <Star className="size-3.5 mr-2" />
         <span className="flex-1">Favorites</span>
         {entries.length > 0 && (
@@ -75,28 +79,57 @@ function SidebarNavLinks() {
 
 function RootLayout() {
   const { dispatch } = useAppState();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const isLgUp = useMediaQuery("(min-width: 1024px)");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
+  const sidebarCollapsed = isLgUp ? desktopSidebarCollapsed : !mobileSidebarOpen;
   const navigate = useNavigate();
 
   useGenerationQueue();
 
+  const openSidebar = () => {
+    if (isLgUp) setDesktopSidebarCollapsed(false);
+    else setMobileSidebarOpen(true);
+  };
+
+  const closeSidebar = () => {
+    if (isLgUp) setDesktopSidebarCollapsed(true);
+    else setMobileSidebarOpen(false);
+  };
+
+  const closeMobileSidebar = () => {
+    if (!isLgUp) setMobileSidebarOpen(false);
+  };
+
   const handleCreateNew = () => {
     dispatch({ type: "RESTORE_FORM", form: DEFAULT_FORM, promptId: undefined });
     navigate({ to: "/" });
+    closeMobileSidebar();
   };
 
   return (
     <FavoritesProvider>
       <ConfirmDialogProvider>
         <TooltipProvider>
-          <div className="flex h-dvh bg-background text-foreground">
+          <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+            {!sidebarCollapsed && !isLgUp && (
+              <button
+                type="button"
+                className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-[1px] lg:hidden"
+                aria-label="Close sidebar"
+                onClick={closeSidebar}
+              />
+            )}
             <aside
               className={cn(
-                "flex flex-col shrink-0 border-r border-border bg-card/50 transition-all duration-200",
-                sidebarCollapsed ? "w-0 overflow-hidden border-r-0" : "w-64",
+                "flex w-64 flex-col shrink-0 border-r border-border bg-card/95 transition-transform duration-200",
+                "max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-50 max-lg:shadow-elevated",
+                sidebarCollapsed
+                  ? "max-lg:-translate-x-full lg:w-0 lg:overflow-hidden lg:border-r-0"
+                  : "max-lg:translate-x-0",
               )}
             >
-              <div className="px-3 py-3 flex items-center gap-2 border-b border-border">
+              <div className="flex items-center gap-2 border-b border-border px-3 py-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <svg aria-hidden="true" className="size-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                     <rect x="3" y="3" width="18" height="18" rx="5" />
@@ -117,7 +150,7 @@ function RootLayout() {
                   size="icon-sm"
                   className="ml-auto shrink-0"
                   aria-label="Close sidebar"
-                  onClick={() => setSidebarCollapsed(true)}
+                  onClick={closeSidebar}
                 >
                   <PanelLeftClose className="size-3.5" />
                 </Button>
@@ -125,14 +158,15 @@ function RootLayout() {
 
               <div className="px-3 py-3 space-y-3 border-b border-border">
                 <Button
+                  variant="generate"
                   size="sm"
-                  className="h-9 text-body-sm font-medium w-full justify-start rounded-lg shadow-card"
+                  className="h-9 w-full justify-start rounded-lg text-body-sm font-medium"
                   onClick={handleCreateNew}
                 >
-                  <Plus className="size-3.5 mr-2" />
+                  <Plus className="mr-2 size-3.5" />
                   Create New Image
                 </Button>
-                <SidebarNavLinks />
+                <SidebarNavLinks onNavigate={closeMobileSidebar} />
               </div>
 
               <div className="flex-1 flex flex-col min-h-0">
@@ -163,7 +197,7 @@ function RootLayout() {
                       variant="ghost"
                       size="icon-sm"
                       aria-label="Open sidebar"
-                      onClick={() => setSidebarCollapsed(false)}
+                      onClick={openSidebar}
                     >
                       <PanelLeft className="size-4" />
                     </Button>

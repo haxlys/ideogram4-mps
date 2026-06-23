@@ -12,23 +12,39 @@ export function HistoryEditorLayout() {
   useFormAutosave(state.form);
 
   return (
-    <ScrollArea className="flex-1">
-      <div className="mx-auto max-w-7xl px-4 py-6 lg:py-8">
-        <div className="sticky top-0 z-10 -mx-4 mb-6 flex justify-end border-b border-border/60 bg-background/90 px-4 py-3 backdrop-blur-md lg:static lg:z-auto lg:mx-0 lg:mb-6 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0 lg:backdrop-blur-none">
-          <GenerationActions className="w-full sm:w-auto" />
-        </div>
-
-        <div className="flex flex-col gap-6 md:flex-row md:items-start">
-          <div className="min-w-0 flex-1 space-y-6">
-            <GenerationSettings />
-            <PromptSection />
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <ScrollArea className="flex-1">
+        <div className="mx-auto max-w-7xl px-4 py-5 pb-24 md:py-7 md:pb-8 lg:pb-8">
+          <div className="mb-5 hidden items-center justify-between gap-4 lg:flex">
+            <div>
+              <h2 className="text-title font-semibold tracking-[-0.02em] text-foreground">
+                Edit
+              </h2>
+              <p className="mt-0.5 text-body-sm text-muted-foreground">
+                Refine the prompt and settings, then regenerate
+              </p>
+            </div>
+            <GenerationActions />
           </div>
 
-          <aside className="min-w-0 w-full md:w-[min(100%,380px)] md:shrink-0 md:sticky md:top-[var(--header-height)] md:max-h-[calc(100dvh-var(--header-height))] md:overflow-y-auto">
-            <HistoryOutputPanel />
-          </aside>
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
+            <div className="min-w-0 flex-1 space-y-5">
+              <PromptSection />
+              <GenerationSettings />
+            </div>
+
+            <aside className="min-w-0 w-full md:w-[min(100%,400px)] md:shrink-0 md:sticky md:top-[calc(var(--header-height)+1rem)] md:max-h-[calc(100dvh-var(--header-height)-2rem)] md:overflow-y-auto">
+              <HistoryOutputPanel />
+            </aside>
+          </div>
+        </div>
+      </ScrollArea>
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/92 px-4 py-3 shadow-elevated backdrop-blur-md lg:hidden">
+        <div className="pointer-events-auto mx-auto max-w-7xl">
+          <GenerationActions className="w-full" />
         </div>
       </div>
-    </ScrollArea>
+    </div>
   );
 }

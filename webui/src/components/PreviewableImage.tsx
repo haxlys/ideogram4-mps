@@ -9,6 +9,7 @@ interface PreviewableImageProps {
   imageClassName?: string;
   hint?: string;
   caption?: string;
+  loading?: "lazy" | "eager";
 }
 
 export function PreviewableImage({
@@ -19,6 +20,7 @@ export function PreviewableImage({
   imageClassName,
   hint = "Click to preview",
   caption,
+  loading = "eager",
 }: PreviewableImageProps) {
   return (
     <button
@@ -34,6 +36,8 @@ export function PreviewableImage({
       <img
         src={src}
         alt={alt}
+        loading={loading}
+        decoding="async"
         className={cn(
           "w-full cursor-zoom-in object-contain transition-transform duration-200 ease-out group-hover:scale-[1.015]",
           imageClassName,

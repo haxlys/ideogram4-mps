@@ -35,15 +35,43 @@ export function ResultCanvas() {
     return (
       <section
         aria-label="Result canvas"
-        className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-border surface-canvas px-6 py-12 text-center"
+        className="flex min-h-[min(52vh,420px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-card"
       >
-        <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
-          <ImageIcon className="size-5 text-muted-foreground" />
+        <div className="border-b border-border bg-muted/30 px-4 py-2.5">
+          <h2 className="text-body-sm font-semibold text-foreground">Preview</h2>
+          <p className="mt-0.5 text-caption text-muted-foreground">
+            Your generated image appears here
+          </p>
         </div>
-        <h2 className="text-title font-semibold text-foreground">No result yet</h2>
-        <p className="mt-2 max-w-sm text-body-sm text-muted-foreground">
-          Write a prompt and generate to preview your image here.
-        </p>
+        <div className="flex flex-1 flex-col items-center justify-center surface-canvas px-6 py-10 text-center">
+          <div className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-border/60 bg-background/80 shadow-card">
+            <ImageIcon className="size-6 text-muted-foreground" />
+          </div>
+          <h3 className="text-title font-semibold text-foreground">Ready to create</h3>
+          <p className="mt-2 max-w-[16rem] text-body-sm leading-relaxed text-muted-foreground">
+            Write a prompt on the left, then tap Generate to see your image.
+          </p>
+          <ol className="mt-6 flex max-w-[15rem] flex-col gap-2 text-left text-caption text-muted-foreground">
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-generate-muted text-[10px] font-semibold text-generate">
+                1
+              </span>
+              <span>Describe your scene in Quick or Form mode</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-generate-muted text-[10px] font-semibold text-generate">
+                2
+              </span>
+              <span>Pick resolution and aspect ratio</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-generate-muted text-[10px] font-semibold text-generate">
+                3
+              </span>
+              <span>Generate and preview here</span>
+            </li>
+          </ol>
+        </div>
       </section>
     );
   }

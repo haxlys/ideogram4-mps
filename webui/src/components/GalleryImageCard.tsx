@@ -46,7 +46,7 @@ export function GalleryImageCard({
   };
 
   return (
-    <article className="group relative">
+    <article className="group relative break-inside-avoid">
       <PreviewableImage
         src={src}
         alt={alt}
@@ -55,6 +55,7 @@ export function GalleryImageCard({
         imageClassName={imageClassName}
         caption={caption}
         hint={previewHint ?? `Preview ${alt}`}
+        loading="lazy"
       />
 
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
