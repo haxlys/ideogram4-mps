@@ -32,39 +32,37 @@ export function GenerationActions({ className }: GenerationActionsProps) {
   }
 
   return (
-    <div className={cn("flex flex-col items-end gap-2 sm:flex-row sm:items-center", className)}>
+    <div className={cn("flex flex-row flex-wrap items-center justify-end gap-2", className)}>
       <p className="hidden text-caption text-muted-foreground lg:block lg:mr-1">
         New seed regeneration or save as a new entry
       </p>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button
-          variant="generate"
-          size="lg"
-          className="h-11 min-w-[10rem] px-4 text-body-sm font-semibold tracking-[-0.01em]"
-          disabled={!canGenerate}
-          onClick={() => void enqueue({ historyLink: "regenerate", newSeed: true })}
-        >
-          {hasPendingJobs ? (
-            <ListPlus className="mr-2 size-4" />
-          ) : (
-            <RefreshCw className="mr-2 size-4" />
-          )}
-          {hasPendingJobs ? "Queue Regeneration" : "Regenerate"}
-        </Button>
-        <Button
-          variant="outline"
-          className="h-10 px-4 text-body-sm font-medium"
-          disabled={!canGenerate}
-          onClick={() => void enqueue({ historyLink: "new", newSeed: true })}
-        >
-          {hasPendingJobs ? (
-            <ListPlus className="mr-2 size-4" />
-          ) : (
-            <Plus className="mr-2 size-4" />
-          )}
-          {hasPendingJobs ? "Queue as New Entry" : "Save as New Entry"}
-        </Button>
-      </div>
+      <Button
+        variant="generate"
+        size="lg"
+        className="h-11 min-w-0 flex-1 px-3 text-body-sm font-semibold tracking-[-0.01em] sm:min-w-[10rem] sm:flex-none sm:px-4"
+        disabled={!canGenerate}
+        onClick={() => void enqueue({ historyLink: "regenerate", newSeed: true })}
+      >
+        {hasPendingJobs ? (
+          <ListPlus className="mr-2 size-4 shrink-0" />
+        ) : (
+          <RefreshCw className="mr-2 size-4 shrink-0" />
+        )}
+        <span className="truncate">{hasPendingJobs ? "Queue Regen" : "Regenerate"}</span>
+      </Button>
+      <Button
+        variant="outline"
+        className="h-11 min-w-0 flex-1 px-3 text-body-sm font-medium sm:h-10 sm:flex-none sm:px-4"
+        disabled={!canGenerate}
+        onClick={() => void enqueue({ historyLink: "new", newSeed: true })}
+      >
+        {hasPendingJobs ? (
+          <ListPlus className="mr-2 size-4 shrink-0" />
+        ) : (
+          <Plus className="mr-2 size-4 shrink-0" />
+        )}
+        <span className="truncate">{hasPendingJobs ? "Queue New" : "New Entry"}</span>
+      </Button>
     </div>
   );
 }
