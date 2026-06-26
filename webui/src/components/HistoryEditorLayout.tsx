@@ -14,18 +14,7 @@ export function HistoryEditorLayout() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <ScrollArea className="flex-1">
-        <div className="mx-auto max-w-7xl px-4 pt-5 pb-24 md:pt-7 md:pb-24 lg:pb-8">
-          <div className="mb-5 hidden items-center justify-between gap-4 lg:flex">
-            <div>
-              <h2 className="text-title font-semibold tracking-[-0.02em] text-foreground">
-                Edit
-              </h2>
-              <p className="mt-0.5 text-body-sm text-muted-foreground">
-                Refine the prompt and settings, then regenerate
-              </p>
-            </div>
-            <GenerationActions />
-          </div>
+        <div className="mx-auto max-w-7xl px-4 pt-3 pb-24 md:pb-24 md:pt-4 lg:pb-8 lg:pt-3">
 
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
             <div className="min-w-0 flex-1 space-y-5">
@@ -33,8 +22,11 @@ export function HistoryEditorLayout() {
               <GenerationSettings />
             </div>
 
-            <aside className="min-w-0 w-full md:w-[min(100%,400px)] md:shrink-0 md:sticky md:top-[calc(var(--header-height)+1rem)] md:max-h-[calc(100dvh-var(--header-height)-2rem)] md:overflow-y-auto">
+            <aside className="min-w-0 w-full md:sticky md:top-3 md:flex md:max-h-[calc(100dvh-var(--header-height)-1.5rem)] md:min-h-0 md:w-[min(100%,400px)] md:shrink-0 md:self-start md:flex-col md:gap-3">
               <HistoryOutputPanel />
+              <div className="hidden lg:block">
+                <GenerationActions className="w-full [&>div:first-child]:flex-col [&>div:first-child]:sm:flex-row [&>div:first-child]:gap-2 [&_button]:min-w-0 [&_button]:flex-1" />
+              </div>
             </aside>
           </div>
         </div>

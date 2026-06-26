@@ -2,11 +2,15 @@
   "servers": {
     "pyright": {
       "command": ".venv/bin/pyright-langserver",
-      "args": ["--stdio"]
+      "args": ["--stdio"],
+      "fileTypes": [".py", ".pyi"],
+      "rootMarkers": [".venv", "server", "ideogram4_mlx.py"]
     },
     "typescript-language-server": {
       "command": "webui/node_modules/.bin/typescript-language-server",
-      "args": ["--stdio"]
+      "args": ["--stdio"],
+      "fileTypes": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"],
+      "rootMarkers": ["webui/package.json", "webui/tsconfig.json"]
     }
   }
 }

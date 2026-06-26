@@ -1,0 +1,8 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "extraPaths": ["server"],
+  "include": ["server", "ideogram4_mlx.py", "scripts"],
+  "exclude": ["**/node_modules", "**/__pycache__", "webui", "logs", "outputs"]
+}

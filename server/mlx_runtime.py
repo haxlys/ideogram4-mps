@@ -337,8 +337,11 @@ class MlxRuntime:
     ) -> None:
         from mflux.callbacks.callback_registry import CallbackRegistry
 
-        self._model.callbacks = CallbackRegistry()
-        self._model.callbacks.register(_GenerationProgressCallback(progress_cb, cancel_cb))
+        model = self._model
+        if model is None:
+            raise RuntimeError("MLX model is not loaded")
+        model.callbacks = CallbackRegistry()
+        model.callbacks.register(_GenerationProgressCallback(progress_cb, cancel_cb))
 
     def _resolve_lora_stack(self, loras: list[dict[str, Any]]) -> list[dict[str, Any]]:
         requested = []

@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 import { useAppState } from "@/state/context";
 import {
   applyLoraStack,
@@ -9,36 +9,27 @@ import {
   getLoraStatus,
   removeLora as removeLoraApi,
 } from "@/api/client";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
-import { Layers2, Sparkles, X } from "lucide-react";
+import { X } from "lucide-react";
 import { friendlyLoraName } from "@/lib/lora";
+import type { AppliedLora, LoraPreset } from "@/lib/loraTypes";
+import {
+  groupPresetsByFamily,
+  loraFamilyFromPreset,
+  LORA_FAMILIES,
+  loraVersionChip,
+} from "@/lib/loraPresets";
+import { cn } from "@/lib/utils";
 
-interface AppliedLora { name: string; strength: number; format?: string; }
-interface LoraPresetEntry {
-  name: string;
-  repo?: string;
-  filename?: string;
-  strength: number;
-  installed: boolean;
-  format?: string | null;
-  size_mb?: number | null;
-}
-interface LoraPreset {
-  id: string;
-  label: string;
-  installed: boolean;
-  loras: LoraPresetEntry[];
-}
 interface LoraOperationUiState {
   msg: string;
   phase: string;
   progress: number | null;
 }
+
 interface LoraUiState {
   presets: LoraPreset[];
   applied: string | null;
@@ -48,6 +39,7 @@ interface LoraUiState {
   downloadingPreset: string | null;
   loraOperation: LoraOperationUiState | null;
 }
+
 type LoraUiAction =
   | { type: "HYDRATE"; presets: LoraPreset[]; applied: string | null; appliedLoras: AppliedLora[] }
   | { type: "SET_LOADING"; loading: boolean; loadingPreset?: string | null; loraOperation?: LoraOperationUiState | null }
@@ -119,10 +111,34 @@ async function waitForDownload(taskId: string, onUpdate: (operation: LoraOperati
   return waitForDownload(taskId, onUpdate);
 }
 
-export function LoRASelector() {
+function activeFamilyLabel(appliedLoras: AppliedLora[]): string | null {
+  if (appliedLoras.length === 0) return null;
+  const name = appliedLoras[0].name;
+  const family = name.toLowerCase().includes("zjourney")
+    ? "zJourney"
+    : name.toLowerCase().includes("realism")
+      ? "Realism"
+      : null;
+  const chip = loraVersionChip({
+    id: name,
+    label: name,
+    installed: true,
+    loras: [{ name, strength: appliedLoras[0].strength, installed: true }],
+  });
+  if (family) return `${family} ${chip}`;
+  return friendlyLoraName(name);
+}
+
+export function LoRASelector({ embedded = false, dense = false }: { embedded?: boolean; dense?: boolean } = {}) {
   const { state } = useAppState();
   const [loraState, dispatchLora] = useReducer(loraUiReducer, initialLoraUiState);
   const { presets, applied, appliedLoras, loading, loadingPreset, downloadingPreset, loraOperation } = loraState;
+
+  const grouped = useMemo(() => groupPresetsByFamily(presets), [presets]);
+  const otherPresets = useMemo(
+    () => presets.filter((p) => !loraFamilyFromPreset(p)),
+    [presets],
+  );
 
   const refresh = async () => {
     const [status, presetRes] = await Promise.all([getLoraStatus(), getLoraPresets()]);
@@ -153,6 +169,7 @@ export function LoRASelector() {
   }, [state.modelState]);
 
   const activeKey = stackKey(appliedLoras);
+  const appliedSummary = activeFamilyLabel(appliedLoras);
 
   const waitForLoraOperation = async (taskId: string) => {
     const status = await getLoraOperationStatus(taskId);
@@ -222,6 +239,18 @@ export function LoRASelector() {
     }
   };
 
+  const handlePresetClick = (preset: LoraPreset, active: boolean) => {
+    if (!preset.installed) {
+      void handleDownloadPreset(preset);
+      return;
+    }
+    if (active) {
+      void handleRemove();
+    } else {
+      void handleApplyPreset(preset);
+    }
+  };
+
   const handleRemove = async () => {
     dispatchLora({
       type: "SET_LOADING",
@@ -247,91 +276,123 @@ export function LoRASelector() {
 
   if (presets.length === 0) return null;
 
-  return (
-    <div className="space-y-2.5 pt-1 border-t border-border">
-      <div className="flex items-center gap-1.5">
-        <Sparkles className="size-3 text-muted-foreground" />
-        <Label className="text-[13px] font-medium">LoRA</Label>
-        {applied && (
-          <Badge variant="secondary" className="max-w-[180px] px-1.5 py-0 text-[10px]">
-            {loading && loadingPreset == null ? <Spinner className="size-2.5 animate-spin mr-1 inline-block" /> : null}
-            <span className="truncate">{appliedLoras.map((lora) => friendlyLoraName(lora.name)).join(" + ")}</span>
-          </Badge>
+  const renderPresetChip = (preset: LoraPreset) => {
+    const active = activeKey === stackKey(preset.loras);
+    const downloading = downloadingPreset === preset.id;
+    const busy = loading && loadingPreset === preset.id;
+    const size = presetSize(preset);
+    const strength = preset.loras[0]?.strength;
+
+    return (
+      <Button
+        key={preset.id}
+        type="button"
+        variant={active ? "generate" : "outline"}
+        size="sm"
+        className={cn(
+          "h-auto min-h-9 min-w-[4.25rem] flex-col gap-0.5 px-2.5 py-1.5 text-center",
+          !active && "hover:border-generate/25 hover:bg-generate-muted/40",
         )}
+        onClick={() => handlePresetClick(preset, active)}
+        disabled={
+          loading
+          || (downloadingPreset != null && !downloading)
+          || (preset.installed && state.modelState !== "loaded")
+        }
+      >
+        <span className={cn("font-semibold tabular-nums leading-none", dense ? "text-[11px]" : "text-body-sm")}>
+          {busy || downloading ? <Spinner className="mx-auto size-3.5" /> : loraVersionChip(preset)}
+        </span>
+        <span
+          className={cn(
+            "text-[10px] leading-tight tabular-nums",
+            active ? "text-generate-foreground/80" : "text-muted-foreground",
+          )}
+        >
+          {!preset.installed
+            ? "Download"
+            : size ?? (strength != null ? String(strength) : "—")}
+        </span>
+      </Button>
+    );
+  };
+
+  const renderFamilyBlock = (title: string, description: string, items: LoraPreset[]) => {
+    if (items.length === 0) return null;
+    return (
+      <div className={cn(dense ? "space-y-1" : "space-y-2")}>
+        <div>
+          <p className={cn("font-medium text-foreground", dense ? "text-[11px]" : "text-caption")}>{title}</p>
+          {!dense ? (
+            <p className="text-[11px] leading-snug text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
+        <div className={cn("flex flex-wrap", dense ? "gap-1" : "gap-2")}>{items.map(renderPresetChip)}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className={cn(dense ? "space-y-1.5" : "space-y-3")}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 text-caption text-muted-foreground">
+          {appliedSummary
+            ? (
+              <>
+                Active:{" "}
+                <span className="font-medium text-foreground tabular-nums">
+                  {appliedSummary}
+                  {appliedLoras[0]?.strength != null ? ` · ${appliedLoras[0].strength}` : ""}
+                </span>
+              </>
+            )
+            : embedded
+              ? "Pick a version below"
+              : "Optional style adapter — reloads the model when changed"}
+        </p>
         {applied && (
           <Button
-            variant="ghost"
-            size="icon-xs"
-            className="ml-auto"
-            onClick={handleRemove}
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1 px-2 text-caption"
+            onClick={() => void handleRemove()}
             disabled={loading || downloadingPreset != null || state.modelState !== "loaded"}
             title="Remove LoRA"
           >
-            {loading && loadingPreset == null ? <Spinner className="size-3 animate-spin" /> : <X className="size-3" />}
+            {loading && loadingPreset == null ? <Spinner className="size-3" /> : <X className="size-3" />}
+            Clear
           </Button>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
-        {presets.map((preset) => {
-          const active = activeKey === stackKey(preset.loras);
-          const downloading = downloadingPreset === preset.id;
-          const size = presetSize(preset);
-          return (
-            <Button
-              key={preset.id}
-              variant={active ? "default" : "secondary"}
-              size="sm"
-              className="h-auto min-h-8 w-full justify-between gap-2 py-1.5 text-[11px] font-medium whitespace-normal"
-              onClick={() => {
-                if (!preset.installed) {
-                  handleDownloadPreset(preset);
-                  return;
-                }
-                if (active) {
-                  handleRemove();
-                } else {
-                  handleApplyPreset(preset);
-                }
-              }}
-              disabled={loading || (downloadingPreset != null && !downloading) || (preset.installed && state.modelState !== "loaded")}
-            >
-              <span className="min-w-0 flex-1 text-left leading-snug">{preset.label}</span>
-              <span className="shrink-0 self-center text-[10px] text-muted-foreground">
-                {(loading && loadingPreset === preset.id) || downloading ? (
-                  <Spinner className="size-3 animate-spin" />
-                ) : !preset.installed ? (
-                  "Download"
-                ) : (
-                  size ?? preset.loras.map((lora) => lora.strength).join("+")
-                )}
-              </span>
-            </Button>
-          );
+      <div
+        className={cn(
+          "rounded-lg",
+          dense ? "space-y-1.5 p-0" : "space-y-3 p-3",
+          embedded ? "border-0 bg-transparent" : "border border-border bg-muted/20",
+        )}
+      >
+        {LORA_FAMILIES.map((family) => {
+          const items = grouped.get(family.id) ?? [];
+          return renderFamilyBlock(family.title, family.description, items);
         })}
+        {otherPresets.length > 0
+          ? renderFamilyBlock("Other", "Additional local LoRA files", otherPresets)
+          : null}
       </div>
 
       {loraOperation && (
-        <div className="space-y-1.5 rounded-md border border-border bg-muted/30 px-2 py-1.5">
-          <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="space-y-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
             <Spinner className="size-3 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{loraOperation.msg}</span>
-            <span className="shrink-0 tabular-nums">{loraOperation.progress == null ? "..." : `${loraOperation.progress}%`}</span>
+            <span className="shrink-0 tabular-nums">
+              {loraOperation.progress == null ? "…" : `${loraOperation.progress}%`}
+            </span>
           </div>
           <Progress value={loraOperation.progress} className="h-1" />
         </div>
       )}
-
-      <div className="flex flex-wrap items-center gap-1">
-        <Layers2 className="size-3 text-muted-foreground" />
-        {appliedLoras.length > 0 ? appliedLoras.map((lora) => (
-          <Badge key={`${lora.name}-${lora.strength}`} variant="outline" className="h-4 px-1.5 text-[10px]">
-            {friendlyLoraName(lora.name)} {lora.strength}
-          </Badge>
-        )) : (
-          <Badge variant="outline" className="h-4 px-1.5 text-[10px]">none</Badge>
-        )}
-      </div>
     </div>
   );
 }

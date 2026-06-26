@@ -96,6 +96,24 @@ export interface GenJob {
 }
 
 export const MAX_GEN_QUEUE_SIZE = 20;
+export type MagicExpandStatus = "idle" | "running" | "done" | "error";
+
+export interface MagicExpandPayload {
+  prompt: string;
+  width: number;
+  height: number;
+  imagesB64: string[] | null;
+}
+
+export interface MagicExpandState {
+  status: MagicExpandStatus;
+  requestId: number;
+  model: string | null;
+  error: string | null;
+  /** Set while status is "running"; cleared on success, failure, or dismiss. */
+  pending: MagicExpandPayload | null;
+}
+
 
 export interface PromptEntry extends FormState {
   _savedAt: string;
@@ -123,6 +141,10 @@ export type AppAction =
   | { type: "REMOVE_IMAGES_BY_PROMPT"; promptId: number }
   | { type: "SHOW_RESULT"; entry: ImageEntry | null; pinned?: boolean }
   | { type: "REFRESH_HISTORY" }
+  | { type: "MAGIC_EXPAND_START"; payload: MagicExpandPayload }
+  | { type: "MAGIC_EXPAND_SUCCEEDED"; rawJson: string; model: string }
+  | { type: "MAGIC_EXPAND_FAILED"; error: string }
+  | { type: "MAGIC_EXPAND_DISMISS" }
   | { type: "REFRESH_FAVORITES" };
 
 export const DEFAULT_FORM: FormState = {

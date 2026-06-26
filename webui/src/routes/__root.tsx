@@ -1,81 +1,26 @@
 import { useState } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { createRootRoute, Link, Outlet, useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { createRootRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useAppState } from "@/state/context";
 import { DEFAULT_FORM } from "@/state/types";
 import { ModelPanel } from "@/components/ModelPanel";
 import { GenerationQueuePanel } from "@/components/GenerationQueuePanel";
+import { useMagicPromptExpandRunner } from "@/hooks/useMagicPromptExpandRunner";
 import { useGenerationQueue } from "@/hooks/useGenerationQueue";
 import { PromptHistory } from "@/components/PromptHistory";
-import { FavoritesProvider, useFavorites } from "@/state/favoritesContext";
+import { FavoritesProvider } from "@/state/favoritesContext";
 import { ConfirmDialogProvider } from "@/components/ConfirmDialogProvider";
+import { SidebarNavLinks } from "@/components/SidebarNavLinks";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
-import { PanelLeftClose, PanelLeft, Plus, History, LayoutGrid, Star } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Plus, History } from "lucide-react";
 
 export const Route = createRootRoute({
   component: RootLayout,
 });
-
-function SidebarNavLink({
-  to,
-  active,
-  onNavigate,
-  children,
-}: {
-  to: string;
-  active: boolean;
-  onNavigate?: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      onClick={onNavigate}
-      className={cn(
-        "relative flex h-8 items-center rounded-lg px-3 text-body-sm font-medium text-foreground no-underline transition-colors hover:bg-accent",
-        active && "bg-generate-muted font-medium text-foreground",
-      )}
-    >
-      {active && (
-        <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-generate" />
-      )}
-      {children}
-    </Link>
-  );
-}
-
-function SidebarNavLinks({ onNavigate }: { onNavigate?: () => void }) {
-  const { entries } = useFavorites();
-  const matchRoute = useMatchRoute();
-  const galleryActive = Boolean(matchRoute({ to: "/gallery" }));
-  const favoritesActive = Boolean(
-    matchRoute({ to: "/favorites" })
-    || matchRoute({ to: "/favorites/$favoriteId" }),
-  );
-
-  return (
-    <nav className="space-y-0.5" aria-label="Main navigation">
-      <SidebarNavLink to="/gallery" active={galleryActive} onNavigate={onNavigate}>
-        <LayoutGrid className="size-3.5 mr-2" />
-        Gallery
-      </SidebarNavLink>
-      <SidebarNavLink to="/favorites" active={favoritesActive} onNavigate={onNavigate}>
-        <Star className="size-3.5 mr-2" />
-        <span className="flex-1">Favorites</span>
-        {entries.length > 0 && (
-          <Badge variant="secondary" className="h-4 min-w-4 px-1 text-caption tabular-nums">
-            {entries.length}
-          </Badge>
-        )}
-      </SidebarNavLink>
-    </nav>
-  );
-}
 
 function RootLayout() {
   const { dispatch } = useAppState();
@@ -86,6 +31,7 @@ function RootLayout() {
   const navigate = useNavigate();
 
   useGenerationQueue();
+  useMagicPromptExpandRunner();
 
   const openSidebar = () => {
     if (isLgUp) setDesktopSidebarCollapsed(false);

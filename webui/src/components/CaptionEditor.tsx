@@ -107,7 +107,7 @@ export function CaptionEditor() {
             placeholder='{"high_level_description": "...", "compositional_deconstruction": {...}}'
             value={state.form.rawJson}
             onChange={(e) => dispatch({ type: "SET_FORM", form: { rawJson: e.target.value } })}
-            className="min-h-[400px] resize-y font-mono text-body-sm"
+            className="min-h-[400px] resize-y overflow-x-hidden whitespace-pre-wrap break-words font-mono text-body-sm"
           />
         </div>
       )}

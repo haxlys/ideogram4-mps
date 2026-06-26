@@ -11,8 +11,10 @@ import random
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import requests
+from PIL import Image as PILImage
 
 
 DEFAULT_DAEMON_URL = os.environ.get("IDEOGRAM4_MODEL_DAEMON_URL", "http://127.0.0.1:8001")
@@ -94,7 +96,7 @@ def _wait_for_lora_operation(base_url: str, task_id: str, logger: logging.Logger
     raise RuntimeError("Timed out waiting for daemon LoRA operation.")
 
 
-def _load_prompt(args) -> tuple[str, object]:
+def _load_prompt(args) -> tuple[str, dict[str, Any] | str]:
     if args.prompt_file:
         prompt = args.prompt_file.read_text().strip()
     elif args.prompt:
@@ -102,11 +104,11 @@ def _load_prompt(args) -> tuple[str, object]:
     else:
         raise ValueError("--prompt or --prompt-file required")
 
-    payload: object = prompt
+    payload: dict[str, Any] | str = prompt
     try:
         parsed = json.loads(prompt)
         if isinstance(parsed, dict):
-            payload = parsed
+            payload = cast(dict[str, Any], parsed)
     except json.JSONDecodeError:
         pass
     return prompt, payload
@@ -122,7 +124,7 @@ def _resolve_dimensions(args) -> tuple[int, int]:
     return 16 * (width // 16), 16 * (height // 16)
 
 
-def run_via_daemon(args, prompt: str, caption_payload: object, width: int, height: int, logger: logging.Logger) -> bool:
+def run_via_daemon(args, prompt: str, caption_payload: dict[str, Any] | str, width: int, height: int, logger: logging.Logger) -> bool:
     base_url = args.daemon_url.rstrip("/")
     try:
         _daemon_json("GET", base_url, "/health", timeout=3)
@@ -209,7 +211,7 @@ def run_via_daemon(args, prompt: str, caption_payload: object, width: int, heigh
     return True
 
 
-def run_direct(args, prompt: str, caption_payload: object, width: int, height: int, logger: logging.Logger) -> None:
+def run_direct(args, prompt: str, caption_payload: dict[str, Any] | str, width: int, height: int, logger: logging.Logger) -> None:
     if args.model_repo:
         os.environ["IDEOGRAM4_MODEL_REPO"] = args.model_repo
     if args.model_path:
@@ -244,7 +246,8 @@ def run_direct(args, prompt: str, caption_payload: object, width: int, height: i
     save_kw = {}
     if args.format in {"webp", "jpeg"}:
         save_kw["quality"] = args.quality or 95
-    image.save(out, format=("JPEG" if args.format == "jpeg" else args.format.upper()), **save_kw)
+    pil_image = cast(PILImage.Image, image)
+    pil_image.save(out, format=("JPEG" if args.format == "jpeg" else args.format.upper()), **save_kw)
     logger.info("Done: %.1fs -> %s", meta["generation_seconds"], out)
     _write_log(
         out,
