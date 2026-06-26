@@ -204,6 +204,14 @@ def _image_format(fmt: str) -> tuple[str, str]:
 
 
 def _run_generate(task_id: str, req: GenerateRequest) -> None:
+    generation_slot_released = False
+
+    def _release_generation_slot() -> None:
+        nonlocal generation_slot_released
+        if not generation_slot_released:
+            _generation_lock.release()
+            generation_slot_released = True
+
     try:
         width, height = _normalise_size(req.width, req.height)
         fmt, pil_fmt = _image_format(req.format)
@@ -226,7 +234,7 @@ def _run_generate(task_id: str, req: GenerateRequest) -> None:
         _set_pipeline_op("generating image")
         try:
             if req.loras:
-                _update_task(task_id, msg="Reloading MLX model with requested LoRA stack...")
+                _update_task(task_id, msg="Preparing requested LoRA stack...")
                 lora_result = _run_on_mlx_thread(runtime.apply_loras, req.loras)
                 if not lora_result.get("ok"):
                     raise RuntimeError(lora_result.get("msg", "LoRA apply failed."))
@@ -242,48 +250,52 @@ def _run_generate(task_id: str, req: GenerateRequest) -> None:
                 cancel_cb=lambda: _is_task_cancelled(task_id),
             )
 
-            buf = BytesIO()
-            save_kw: dict[str, Any] = {}
-            if fmt in {"webp", "jpeg"}:
-                save_kw["quality"] = req.quality or (IMAGE_QUALITY_WEBP if fmt == "webp" else IMAGE_QUALITY_JPEG)
-            image.save(buf, format=pil_fmt, **save_kw)
-
-            lora_status = runtime.get_lora_status()
+            lora_status = runtime.get_lora_status(include_available=False)
             lora_name = lora_status.get("applied")
             applied_loras = lora_status.get("applied_loras") or []
             lora_strength = lora_status.get("strength") if lora_name else None
-            filename = f"{task_id}.{fmt}"
-            content_type = f"image/{'jpeg' if fmt == 'jpeg' else fmt}"
-
-            _update_task(
-                task_id,
-                state="done",
-                msg=f"Done in {gen_meta['generation_seconds']:.1f}s",
-                progress=100,
-                total_steps=total_steps,
-                artifact=buf.getvalue(),
-                content_type=content_type,
-                image_meta={
-                    "hld": _caption_hld(req.caption),
-                    "width": width,
-                    "height": height,
-                    "preset": req.preset,
-                    "seed": req.seed,
-                    "prompt_id": req.prompt_id,
-                    "filename": filename,
-                    "format": fmt,
-                    "generation_seconds": gen_meta["generation_seconds"],
-                    "quantization_bits": gen_meta.get("quantization_bits"),
-                    "lora_name": lora_name,
-                    "lora_strength": lora_strength,
-                    "applied_loras": applied_loras,
-                },
-                done_at=time.time(),
-            )
-            logger.info("Generation task %s done in %.1fs", task_id, gen_meta["generation_seconds"])
         finally:
             _clear_pipeline_op()
             _pipeline_ops_lock.release()
+
+        _release_generation_slot()
+        _update_task(task_id, msg="Encoding image artifact...", progress=99, phase="encode")
+
+        buf = BytesIO()
+        save_kw: dict[str, Any] = {}
+        if fmt in {"webp", "jpeg"}:
+            save_kw["quality"] = req.quality or (IMAGE_QUALITY_WEBP if fmt == "webp" else IMAGE_QUALITY_JPEG)
+        image.save(buf, format=pil_fmt, **save_kw)
+
+        filename = f"{task_id}.{fmt}"
+        content_type = f"image/{'jpeg' if fmt == 'jpeg' else fmt}"
+
+        _update_task(
+            task_id,
+            state="done",
+            msg=f"Done in {gen_meta['generation_seconds']:.1f}s",
+            progress=100,
+            total_steps=total_steps,
+            artifact=buf.getvalue(),
+            content_type=content_type,
+            image_meta={
+                "hld": _caption_hld(req.caption),
+                "width": width,
+                "height": height,
+                "preset": req.preset,
+                "seed": req.seed,
+                "prompt_id": req.prompt_id,
+                "filename": filename,
+                "format": fmt,
+                "generation_seconds": gen_meta["generation_seconds"],
+                "quantization_bits": gen_meta.get("quantization_bits"),
+                "lora_name": lora_name,
+                "lora_strength": lora_strength,
+                "applied_loras": applied_loras,
+            },
+            done_at=time.time(),
+        )
+        logger.info("Generation task %s done in %.1fs", task_id, gen_meta["generation_seconds"])
 
     except GenerationCancelled:
         logger.info("Generation task %s cancelled", task_id)
@@ -306,7 +318,7 @@ def _run_generate(task_id: str, req: GenerateRequest) -> None:
             done_at=time.time(),
         )
     finally:
-        _generation_lock.release()
+        _release_generation_slot()
 
 
 @app.on_event("startup")

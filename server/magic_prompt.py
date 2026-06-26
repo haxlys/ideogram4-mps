@@ -4,6 +4,7 @@ import base64
 import json
 import math
 import requests
+import threading
 
 from config import (
     MAGIC_PROMPT_API_KEY,
@@ -21,6 +22,9 @@ from config import (
     MAGIC_PROMPT_LOCAL_LLAMA_CTX,
 )
 
+_CAPTION_VERIFIER = None
+_CAPTION_VERIFIER_LOCK = threading.Lock()
+
 
 def aspect_ratio_from_size(width: int, height: int) -> str:
     divisor = math.gcd(width, height) or 1
@@ -35,9 +39,18 @@ def _load_sections(_filename: str) -> dict[str, str]:
 
 
 def _caption_verifier():
-    from mflux.models.ideogram4.model.ideogram4_text_encoder.caption import Ideogram4CaptionVerifier
+    global _CAPTION_VERIFIER
+    if _CAPTION_VERIFIER is not None:
+        return _CAPTION_VERIFIER
 
-    return Ideogram4CaptionVerifier()
+    with _CAPTION_VERIFIER_LOCK:
+        if _CAPTION_VERIFIER is not None:
+            return _CAPTION_VERIFIER
+
+        from mflux.models.ideogram4.model.ideogram4_text_encoder.caption import Ideogram4CaptionVerifier
+
+        _CAPTION_VERIFIER = Ideogram4CaptionVerifier()
+        return _CAPTION_VERIFIER
 
 
 def verify_caption(caption: dict) -> list[str]:

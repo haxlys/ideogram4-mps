@@ -46,6 +46,7 @@ class MlxRuntime:
         self._quantization_bits: int | None = None
         self._split_metadata: dict[str, Any] = {}
         self._lora_stack: list[dict[str, Any]] = []
+        self._preset_step_counts: dict[str, int] = {}
 
     def is_available(self) -> tuple[bool, str | None]:
         try:
@@ -196,15 +197,17 @@ class MlxRuntime:
         }
 
     def preset_step_count(self, preset: str) -> int:
+        key = preset or DEFAULT_PRESET
+        if key in self._preset_step_counts:
+            return self._preset_step_counts[key]
         try:
             from mflux.models.ideogram4.model.ideogram4_scheduler import Ideogram4Scheduler
 
-            return int(Ideogram4Scheduler.get_preset(preset).num_steps)
+            count = int(Ideogram4Scheduler.get_preset(key).num_steps)
         except Exception:
-            return {"V4_TURBO_12": 12, "V4_DEFAULT_20": 20, "V4_QUALITY_48": 48}.get(
-                preset or DEFAULT_PRESET,
-                0,
-            )
+            count = {"V4_TURBO_12": 12, "V4_DEFAULT_20": 20, "V4_QUALITY_48": 48}.get(key, 0)
+        self._preset_step_counts[key] = count
+        return count
 
     def list_loras(self) -> list[dict[str, Any]]:
         if not LORA_DIR.is_dir():
@@ -245,13 +248,13 @@ class MlxRuntime:
             )
         return presets
 
-    def get_lora_status(self) -> dict[str, Any]:
+    def get_lora_status(self, *, include_available: bool = True) -> dict[str, Any]:
         applied = " + ".join(item["name"] for item in self._lora_stack) or None
         return {
             "applied": applied,
             "strength": self._lora_stack[0]["strength"] if len(self._lora_stack) == 1 else 0.0,
             "applied_loras": self._public_lora_stack(),
-            "available": self.list_loras(),
+            "available": self.list_loras() if include_available else [],
         }
 
     def apply_loras(
@@ -260,6 +263,14 @@ class MlxRuntime:
         progress_cb: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         requested = self._resolve_lora_stack(loras)
+        if self._lora_stacks_equal(requested, self._lora_stack):
+            return {
+                "ok": True,
+                "msg": f"LoRA stack already active: {' + '.join(item['name'] for item in requested)}",
+                "applied_loras": self._public_lora_stack(),
+                "changed": False,
+            }
+
         was_loaded = self._model is not None
         self._lora_stack = requested
         if was_loaded:
@@ -271,11 +282,12 @@ class MlxRuntime:
             "ok": True,
             "msg": f"LoRA stack active: {' + '.join(item['name'] for item in requested)}",
             "applied_loras": self._public_lora_stack(),
+            "changed": True,
         }
 
     def remove_loras(self, progress_cb: ProgressCallback | None = None) -> dict[str, Any]:
         if not self._lora_stack:
-            return {"ok": False, "msg": "No LoRA applied."}
+            return {"ok": True, "msg": "No LoRA applied.", "applied_loras": [], "changed": False}
         was_loaded = self._model is not None
         self._lora_stack = []
         if was_loaded:
@@ -283,7 +295,7 @@ class MlxRuntime:
             result = self.load(progress_cb=progress_cb)
             if not result.get("ok"):
                 return result
-        return {"ok": True, "msg": "LoRA removed.", "applied_loras": []}
+        return {"ok": True, "msg": "LoRA removed.", "applied_loras": [], "changed": True}
 
     def download_lora_preset(self, _preset_id: str) -> list[dict[str, Any]]:
         raise ValueError("MLX runtime supports local mflux-compatible .safetensors LoRA files only.")
@@ -365,6 +377,19 @@ class MlxRuntime:
         if not requested:
             raise ValueError("No LoRAs requested.")
         return requested
+
+    @staticmethod
+    def _lora_stacks_equal(left: list[dict[str, Any]], right: list[dict[str, Any]]) -> bool:
+        if len(left) != len(right):
+            return False
+        for left_item, right_item in zip(left, right):
+            if left_item.get("name") != right_item.get("name"):
+                return False
+            if left_item.get("path") != right_item.get("path"):
+                return False
+            if abs(float(left_item.get("strength", 0.0)) - float(right_item.get("strength", 0.0))) > 1e-9:
+                return False
+        return True
 
     def _public_lora_stack(self) -> list[dict[str, Any]]:
         return [

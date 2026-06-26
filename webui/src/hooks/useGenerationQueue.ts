@@ -12,7 +12,7 @@ import {
 } from "@/lib/historyLink";
 import { toast } from "sonner";
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 1000;
 const BUSY_RETRY_MS = 2000;
 
 function isActiveJob(job: GenJob) {
@@ -118,7 +118,15 @@ export function useGenerationQueue() {
 
       let retries = 0;
 
-      pollIntervalRef.current = setInterval(async () => {
+      const scheduleNextPoll = () => {
+        if (pollingJobIdRef.current !== jobId || pollingTaskIdRef.current !== taskId) return;
+        pollIntervalRef.current = setTimeout(() => {
+          pollIntervalRef.current = null;
+          void pollOnce();
+        }, POLL_INTERVAL_MS);
+      };
+
+      const pollOnce = async () => {
         const currentJob = stateRef.current.genQueue.find((job) => job.id === jobId);
         const isCancelling = currentJob?.status === "cancelling";
         if (!currentJob || isAbortStatus(currentJob.status)) {
@@ -146,6 +154,7 @@ export function useGenerationQueue() {
                 totalSteps: data.total_steps ?? 0,
               },
             });
+            scheduleNextPoll();
             return;
           }
 
@@ -344,9 +353,12 @@ export function useGenerationQueue() {
               id: jobId,
               patch: { status: "running", msg: `Retrying (${retries}/3)...` },
             });
+            scheduleNextPoll();
           }
         }
-      }, POLL_INTERVAL_MS);
+      };
+
+      void pollOnce();
     },
     [dispatch, finishJobCancelled, navigate, stopPolling],
   );
