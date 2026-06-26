@@ -185,15 +185,17 @@ cache budget.
 Use [docs/benchmarks.md](docs/benchmarks.md) for the canonical prompt, seed,
 presets, and metrics. Current local measurements:
 
-| Case | PyTorch/MPS legacy | MLX q8 | Difference |
-| --- | --- | --- | --- |
-| Model load, local files ready | about 285s | 2.5-4.6s runtime load, 5.3s API-observed smoke | MLX loads about 54-114x faster |
-| 1024x1024 `V4_QUALITY_48`, seed `20260608` | 408.0s | 375.1s | MLX saves 32.9s, about 8.1% faster |
+| Case | PyTorch/MPS legacy | MLX q8 | MLX q4 candidate | Difference |
+| --- | --- | --- | --- | --- |
+| Model load, local files ready | about 285s | 3.5s direct q8 load in the latest quality run | 2.9s direct q4 smoke | MLX keeps load in seconds |
+| 1024x1024 `V4_QUALITY_48`, seed `20260608` | 408.0s | 289.0s direct q8 run | 287.7s direct q4 run | q4 was only 1.3s faster than q8 in direct runs, so q8 remains the default |
 
 The 1024 benchmark uses the same `examples/caption.json` prompt, preset, seed,
 and output size as the legacy run. The old MPS result is preserved in
-`examples/result.log`; the MLX result was generated with the q8 runtime after
-the model was available locally.
+`examples/result.log`. The q4 candidate was benchmarked but not made the
+default because the same-path high-quality speedup was not meaningful; set
+`IDEOGRAM4_MODEL_REPO` or `IDEOGRAM4_MODEL_PATH` to a q4 model if you prefer the
+smaller checkpoint.
 
 Post-merge `main` smoke produced 256x256 `V4_TURBO_12` images in 8.1-9.7s
 through the FastAPI -> daemon path, including LoRA apply/remove checks. A direct

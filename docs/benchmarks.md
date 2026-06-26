@@ -20,15 +20,55 @@ Use `examples/caption.json` unless a benchmark explicitly says otherwise.
 
 ### MPS vs MLX
 
-| Case | PyTorch/MPS legacy | MLX q8 | Difference |
-| --- | --- | --- | --- |
-| Model load, local files ready | about 285s, from historical notes | 2.5-4.6s runtime load, 5.3s API-observed post-merge smoke | MLX loads about 54-114x faster |
-| 1024x1024 `V4_QUALITY_48`, seed `20260608` | 408.0s | 375.1s | MLX saves 32.9s, about 8.1% faster |
+| Case | PyTorch/MPS legacy | MLX q8 | MLX q4 candidate | Difference |
+| --- | --- | --- | --- | --- |
+| Model load, local files ready | about 285s, from historical notes | 3.5s direct q8 load in the latest quality run | 2.9s direct q4 smoke | MLX keeps load in seconds |
+| 1024x1024 `V4_QUALITY_48`, seed `20260608` | 408.0s | 289.0s direct q8 run | 287.7s direct q4 run | q4 was only 1.3s faster than q8 in direct runs, so q8 remains the default |
 
 The 1024 comparison used the same `examples/caption.json` prompt, output size,
 `V4_QUALITY_48` preset, and seed `20260608`. The legacy MPS result is recorded
-in `examples/result.log`. The MLX q8 result was generated after the local
-`MLXBits/ideogram-4-mlx-q8` model was present.
+in `examples/result.log`. The q4 candidate used `MLXBits/ideogram-4-mlx-q4`.
+
+### Q4 Strategy Sweep
+
+Measured on 2026-06-26 with the direct MLX CLI path and
+`examples/caption.json`. The q4 model was
+`MLXBits/ideogram-4-mlx-q4` snapshot
+`46bfca6fad6c750c7bc0056d54bf38412e2ab6de`; the q8 baseline used the local
+`MLXBits/ideogram-4-mlx-q8` model. Each row generated a real image, then the
+temporary image artifact was removed after recording the metadata.
+
+Run the sweep with:
+
+```bash
+IDEOGRAM4_Q4_MODEL_PATH=/path/to/ideogram-4-mlx-q4 \
+IDEOGRAM4_Q8_MODEL_PATH=/path/to/ideogram-4-mlx-q8 \
+python3 scripts/benchmark_q4_strategies.py
+```
+
+| Strategy | Model | Size | Preset | Cache | Generation |
+| --- | --- | --- | --- | --- | --- |
+| q8 balanced baseline | q8 | 512x512 | `V4_DEFAULT_20` | unset | 28.8s |
+| q4 model swap, same balanced case | q4 | 512x512 | `V4_DEFAULT_20` | unset | 30.2s |
+| q4 turbo small | q4 | 512x512 | `V4_TURBO_12` | unset | 19.2s |
+| q4 quality small | q4 | 512x512 | `V4_QUALITY_48` | unset | 75.8s |
+| q4 768 turbo compromise | q4 | 768x768 | `V4_TURBO_12` | unset | 41.4s |
+| q4 768 balanced compromise | q4 | 768x768 | `V4_DEFAULT_20` | unset | 67.8s |
+| q4 balanced with 2GB cache cap | q4 | 512x512 | `V4_DEFAULT_20` | 2GB | 31.8s |
+| q4 balanced with cache disabled | q4 | 512x512 | `V4_DEFAULT_20` | 0GB | 33.5s |
+| q4 1024 turbo | q4 | 1024x1024 | `V4_TURBO_12` | unset | 75.0s |
+| q4 1024 quality target | q4 | 1024x1024 | `V4_QUALITY_48` | unset | 287.7s |
+
+Conclusions:
+
+- The q4 checkpoint is not universally faster: at 512x512 `V4_DEFAULT_20`, q4
+  was slightly slower than q8 in this run.
+- The q4 checkpoint was almost tied with q8 on the high-quality 1024 target:
+  287.7s versus a same-path direct q8 measurement of 289.0s. That is not enough
+  evidence to make q4 the speed default.
+- `IDEOGRAM4_MLX_CACHE_LIMIT_GB=2` and `0` slowed the q4 512 balanced case, so
+  cache limiting should remain an optional memory policy rather than a speed
+  default.
 
 ### MLX Smoke Results
 
