@@ -1,4 +1,3 @@
-import json
 import math
 import re
 import sqlite3
@@ -35,6 +34,13 @@ def _conn() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+def _require_lastrowid(cur: sqlite3.Cursor) -> int:
+    row_id = cur.lastrowid
+    if row_id is None:
+        raise RuntimeError("SQLite INSERT did not return a row id")
+    return int(row_id)
+
 
 
 def _output_root() -> Path:
@@ -245,7 +251,7 @@ def add_image(
         (hld, width, height, preset, seed, stored_path, prompt_id, lora_name, lora_strength, lora_stack_json),
     )
     conn.commit()
-    image_id = cur.lastrowid
+    image_id = _require_lastrowid(cur)
     conn.close()
     return image_id
 
@@ -406,7 +412,7 @@ def attach_image_history(
                 "INSERT INTO prompts (hld, form_json) VALUES (?,?)",
                 (hld, form_json),
             )
-            prompt_id = int(cur.lastrowid)
+            prompt_id = _require_lastrowid(cur)
         else:
             existing = conn.execute(
                 "SELECT id FROM prompts WHERE id = ?", (prompt_id,)
@@ -463,7 +469,7 @@ def save_prompt(hld: str, form_json: str) -> int:
         (hld, form_json),
     )
     conn.commit()
-    pid = cur.lastrowid
+    pid = _require_lastrowid(cur)
     conn.close()
     return pid
 

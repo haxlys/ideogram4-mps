@@ -1,13 +1,16 @@
 import { useReducer, useRef, useCallback, useEffect, useState } from "react";
 import { useAppState } from "@/state/context";
-import { getMagicPromptStatus, magicPrompt } from "@/api/client";
+import { getMagicPromptStatus } from "@/api/client";
+import { useEnqueueGeneration } from "@/hooks/useEnqueueGeneration";
 import { aspectRatioFromSize } from "@/lib/aspectRatio";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { QuickPromptExamples } from "@/components/QuickPromptExamples";
+import { QuickPromptJsonPanel } from "@/components/QuickPromptJsonPanel";
+import { QuickPromptReferences } from "@/components/QuickPromptReferences";
 import { toast } from "sonner";
-import { AlertCircle, Check, CheckCircle2, ChevronDown, Copy, ImageIcon, Plus, Wand2, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Play, Wand2 } from "lucide-react";
 
 interface MagicPromptStatus {
   enabled: boolean;
@@ -24,7 +27,6 @@ interface MagicPromptStatus {
 
 interface QuickPromptState {
   text: string;
-  expanding: boolean;
   previews: string[];
   dragging: boolean;
   settings: {
@@ -36,7 +38,6 @@ interface QuickPromptState {
 
 type QuickPromptAction =
   | { type: "SET_TEXT"; text: string }
-  | { type: "SET_EXPANDING"; expanding: boolean }
   | { type: "ADD_PREVIEWS"; previews: string[] }
   | { type: "REMOVE_PREVIEW"; index: number }
   | { type: "CLEAR_PREVIEWS" }
@@ -45,7 +46,6 @@ type QuickPromptAction =
 
 const initialQuickPromptState: QuickPromptState = {
   text: "",
-  expanding: false,
   previews: [],
   dragging: false,
   settings: { checked: false, status: null, error: null },
@@ -62,8 +62,6 @@ function quickPromptReducer(state: QuickPromptState, action: QuickPromptAction):
   switch (action.type) {
     case "SET_TEXT":
       return { ...state, text: action.text };
-    case "SET_EXPANDING":
-      return { ...state, expanding: action.expanding };
     case "ADD_PREVIEWS":
       return { ...state, previews: [...state.previews, ...action.previews] };
     case "REMOVE_PREVIEW":
@@ -81,7 +79,11 @@ function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const result = reader.result as string;
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Failed to read file"));
+        return;
+      }
       const comma = result.indexOf(",");
       resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
@@ -90,19 +92,42 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function hasUsableCaptionJson(rawJson: string): boolean {
+  const trimmed = rawJson.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+  } catch {
+    return false;
+  }
+}
+
+function magicStatusHint(status: MagicPromptStatus | null, settingsError: string | null, checked: boolean): string | null {
+  if (!checked) return null;
+  if (settingsError) return "LLM settings unavailable";
+  if (!status) return null;
+  if (!status.enabled) return "Magic Prompt disabled in server config";
+  if (!status.configured) {
+    if (status.missing_env.length > 0) return `Missing: ${status.missing_env.join(", ")}`;
+    return status.llm_error ?? "LLM unreachable";
+  }
+  return null;
+}
+
 export function QuickPrompt() {
   const { state: appState, dispatch } = useAppState();
+  const { enqueue, canGenerate } = useEnqueueGeneration();
   const [quickState, quickDispatch] = useReducer(quickPromptReducer, initialQuickPromptState);
   const [copied, setCopied] = useState(false);
-  const [jsonOpen, setJsonOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const imagesRef = useRef<File[]>([]);
   const status = quickState.settings.status;
+  const expanding = appState.magicExpand.status === "running";
   const targetAspectRatio = aspectRatioFromSize(appState.form.w, appState.form.h);
-  const canUseMagicPrompt = Boolean(
-    status?.configured ||
-    (quickState.settings.checked && !quickState.settings.error && !status),
-  );
+  const canGenerateFromJson = hasUsableCaptionJson(appState.form.rawJson);
+  const statusProblem = magicStatusHint(status, quickState.settings.error, quickState.settings.checked);
+  const showExamples = quickState.text.trim().length === 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -156,7 +181,7 @@ export function QuickPrompt() {
     try {
       await navigator.clipboard.writeText(generatedJson);
       setCopied(true);
-      toast.success("Copied JSON to clipboard");
+      toast.success("Copied JSON");
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error("Failed to copy JSON");
@@ -167,7 +192,7 @@ export function QuickPrompt() {
     const trimmed = quickState.text.trim();
     const images = imagesRef.current;
     if (!trimmed && images.length === 0) {
-      toast.error("Please enter a prompt or attach an image");
+      toast.error("Enter a prompt or attach a reference image");
       return;
     }
     if (status && !status.enabled) {
@@ -181,201 +206,115 @@ export function QuickPrompt() {
       toast.error(`Magic Prompt is not configured: ${reason}`);
       return;
     }
-    quickDispatch({ type: "SET_EXPANDING", expanding: true });
+    if (expanding) {
+      toast.message("Already expanding — you can leave this page; we will notify you when done.");
+      return;
+    }
+
     try {
       const b64s = images.length > 0 ? await Promise.all(images.map(fileToBase64)) : null;
-      const res = await magicPrompt(trimmed || "Describe this image in detail.", appState.form.w, appState.form.h, b64s);
       dispatch({
-        type: "SET_FORM",
-        form: { rawJson: JSON.stringify(res.caption, null, 2) },
+        type: "MAGIC_EXPAND_START",
+        payload: {
+          prompt: trimmed || "Describe this image in detail.",
+          width: appState.form.w,
+          height: appState.form.h,
+          imagesB64: b64s,
+        },
       });
       clearAttachedImages();
-      toast.success(`Expanded with ${res.model}`);
+      toast.message("Expanding… You can browse other pages.", { duration: 6000 });
     } catch (e) {
-      toast.error(`Failed to expand prompt: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      quickDispatch({ type: "SET_EXPANDING", expanding: false });
+      toast.error(`Failed to start expansion: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
+  const handleGenerateFromJson = () => {
+    void enqueue({
+      historyLink: "new",
+      newSeed: true,
+      skipVerify: true,
+    });
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-        {canUseMagicPrompt ? (
-          <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-        ) : (
-          <AlertCircle className="size-3.5 shrink-0 text-muted-foreground" />
-        )}
-        <p className="min-w-0 truncate text-body-sm text-muted-foreground">
-          {status
-            ? !status.enabled
-              ? "Magic Prompt disabled"
-              : status.configured
-                ? `${status.provider} / ${status.model}`
-                : status.missing_env.length > 0
-                  ? `Missing: ${status.missing_env.join(", ")}`
-                  : `LLM unreachable`
-            : quickState.settings.error
-              ? "Settings unavailable"
-              : quickState.settings.checked
-                ? "Magic Prompt ready"
-                : "Checking Magic Prompt…"}
+    <div className="space-y-3 rounded-xl border border-border bg-card/50 p-3 shadow-card sm:p-4">
+      {statusProblem && (
+        <p className="text-caption leading-snug text-destructive">{statusProblem}</p>
+      )}
+
+      <Textarea
+        placeholder="Describe the image in plain language…"
+        value={quickState.text}
+        onChange={(e) => quickDispatch({ type: "SET_TEXT", text: e.target.value })}
+        className="min-h-[112px] resize-y border-0 bg-muted/40 px-3 py-2.5 text-body leading-relaxed shadow-none focus-visible:ring-2"
+        disabled={expanding}
+      />
+
+      {expanding && (
+        <p className="flex items-center gap-2 text-caption text-muted-foreground">
+          <Spinner className="size-3.5 shrink-0" />
+          Expanding with LLM — safe to leave; we will notify you.
         </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {showExamples && (
+          <QuickPromptExamples
+            suggestions={PROMPT_SUGGESTIONS}
+            disabled={expanding}
+            onSelect={(suggestion) => quickDispatch({ type: "SET_TEXT", text: suggestion })}
+          />
+        )}
+
+        <QuickPromptReferences
+          fileRef={fileRef}
+          previews={quickState.previews}
+          dragging={quickState.dragging}
+          expanding={expanding}
+          onAddFiles={addFiles}
+          onRemoveImage={removeImage}
+          onDrop={handleDrop}
+          onDraggingChange={(dragging) => quickDispatch({ type: "SET_DRAGGING", dragging })}
+        />
       </div>
 
-      <div className="space-y-4">
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <p className="text-body-sm font-medium">Describe your image</p>
-            <Textarea
-              placeholder="Describe your image in natural language…"
-              value={quickState.text}
-              onChange={(e) => quickDispatch({ type: "SET_TEXT", text: e.target.value })}
-              className="min-h-[140px] resize-y text-body leading-relaxed"
-              disabled={quickState.expanding}
-            />
-          </div>
-
-          {quickState.text.trim().length === 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {PROMPT_SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  className="max-w-[min(100%,18rem)] truncate rounded-full border border-border bg-background px-2.5 py-1 text-left text-caption text-muted-foreground transition-colors hover:border-generate/30 hover:bg-generate-muted hover:text-foreground"
-                  onClick={() => quickDispatch({ type: "SET_TEXT", text: suggestion })}
-                  disabled={quickState.expanding}
-                >
-                  {suggestion.length > 48 ? `${suggestion.slice(0, 48)}…` : suggestion}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            aria-label="Attach image references"
-            onChange={(e) => addFiles(e.target.files ?? [])}
-          />
-
-          {quickState.previews.length > 0 ? (
-            <div className="space-y-2">
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {[...quickState.previews].reverse().map((src, i) => (
-                  <div key={src} className="relative h-20 w-28 shrink-0 overflow-hidden rounded-lg border border-border bg-muted/30">
-                    <img src={src} alt={`Attached ${quickState.previews.length - i}`} className="h-full w-full object-contain" />
-                    <button
-                      type="button"
-                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-background/80 backdrop-blur-sm transition-colors hover:bg-background"
-                      onClick={() => removeImage(quickState.previews.length - 1 - i)}
-                      disabled={quickState.expanding}
-                      aria-label={`Remove attached image ${quickState.previews.length - i}`}
-                    >
-                      <X className="size-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-foreground/50 hover:text-foreground"
-                onClick={() => fileRef.current?.click()}
-                disabled={quickState.expanding}
-              >
-                <Plus className="size-3" />
-                Add more images
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className={"w-full cursor-pointer rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors " + (quickState.dragging ? "border-foreground bg-muted" : "border-border hover:border-foreground/50")}
-              onClick={() => fileRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); quickDispatch({ type: "SET_DRAGGING", dragging: true }); }}
-              onDragLeave={() => quickDispatch({ type: "SET_DRAGGING", dragging: false })}
-              onDrop={handleDrop}
-              disabled={quickState.expanding}
-            >
-              <ImageIcon className="mx-auto mb-1.5 size-5 text-muted-foreground" />
-              <p className="text-[12px] text-muted-foreground">
-                Drop images or click to attach
-              </p>
-            </button>
-          )}
-
-          <p className="text-[12px] leading-5 text-muted-foreground">
-            Target aspect ratio: {targetAspectRatio} ({appState.form.w}×{appState.form.h} from Generation Settings)
-          </p>
-
+      <div className="flex flex-col gap-2 border-t border-border/60 pt-3 sm:flex-row sm:items-center">
+        <p className="text-caption text-muted-foreground sm:mr-auto">
+          {targetAspectRatio} · {appState.form.w}×{appState.form.h}
+          {status?.configured ? ` · ${status.model}` : null}
+        </p>
+        <div className="flex gap-2">
           <Button
             variant="outline"
-            className="w-full text-foreground"
-            onClick={handleExpand}
-            disabled={quickState.expanding || Boolean(status && !status.configured)}
+            size="sm"
+            className="flex-1 sm:flex-none"
+            onClick={() => void handleExpand()}
+            disabled={expanding || Boolean(status && !status.configured)}
           >
-            {quickState.expanding ? (
-              <Spinner className="mr-2 size-4" />
-            ) : (
-              <Wand2 className="mr-2 size-4" />
-            )}
-            {quickState.expanding ? "Expanding..." : "Expand to JSON"}
+            {expanding ? <Spinner className="mr-1.5 size-3.5" /> : <Wand2 className="mr-1.5 size-3.5" />}
+            {expanding ? "Expanding…" : "Expand"}
+          </Button>
+          <Button
+            variant="generate"
+            size="sm"
+            className="flex-1 sm:flex-none"
+            onClick={handleGenerateFromJson}
+            disabled={!canGenerate || !canGenerateFromJson || expanding}
+            title={!canGenerateFromJson ? "Expand first or add JSON in the JSON tab" : undefined}
+          >
+            <Play className="mr-1.5 size-3.5" />
+            Generate
           </Button>
         </div>
-
-        <div className="rounded-lg border border-border bg-card shadow-card">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
-            onClick={() => setJsonOpen((open) => !open)}
-            aria-expanded={jsonOpen}
-          >
-            <span className="text-body-sm font-medium">Generated JSON</span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleCopyJson();
-                }}
-                aria-label="Copy generated JSON"
-              >
-                {copied ? (
-                  <>
-                    <Check className="mr-1 size-3.5" />
-                    Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="mr-1 size-3.5" />
-                    Copy
-                  </>
-                )}
-              </Button>
-              <ChevronDown
-                className={cn(
-                  "size-4 text-muted-foreground transition-transform",
-                  jsonOpen && "rotate-180",
-                )}
-              />
-            </div>
-          </button>
-          {jsonOpen && (
-            <section
-              aria-label="Generated JSON view"
-              className="max-h-[360px] overflow-auto border-t border-border px-3 py-3"
-            >
-              <pre className="whitespace-pre-wrap break-words font-mono text-body-sm leading-5 text-foreground">
-                {generatedJson}
-              </pre>
-            </section>
-          )}
-        </div>
       </div>
+
+      <QuickPromptJsonPanel
+        generatedJson={generatedJson}
+        ready={canGenerateFromJson}
+        copied={copied}
+        onCopy={() => void handleCopyJson()}
+      />
     </div>
   );
 }

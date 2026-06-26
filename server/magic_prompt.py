@@ -55,8 +55,6 @@ def reorder_caption_keys(caption: dict) -> dict:
         extra = [key for key in value if key not in order]
         return {key: value[key] for key in (*known, *extra)}
 
-    if not isinstance(caption, dict):
-        return caption
 
     sd = caption.get("style_description")
     if isinstance(sd, dict):

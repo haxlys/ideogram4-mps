@@ -94,47 +94,48 @@ export function HistoryOutputPanel() {
     <>
       <section
         aria-label="Result"
-        className="overflow-hidden rounded-2xl border border-border bg-card shadow-card"
+        className="flex min-h-[min(52vh,480px)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-card md:max-h-full"
       >
-        <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2.5">
-          <div>
-            <h2 className="flex items-center gap-2 text-body-sm font-semibold text-foreground">
-              Result
-              {images.length > 0 && (
-                <Badge variant="secondary" className="h-5 px-1.5 text-caption tabular-nums">
-                  {images.length}
-                </Badge>
-              )}
-            </h2>
-            <p className="mt-0.5 text-caption text-muted-foreground">
-              Preview and browse generated versions
-            </p>
-          </div>
-          {activeImage && (
-            <div className="flex items-center gap-0.5">
-              <FavoriteButton
-                imageId={activeImage.id}
-                className="text-amber-500 hover:text-amber-600"
-              />
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Open preview"
-                onClick={() => setLightboxOpen(true)}
-              >
-                <Maximize2 className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Download"
-                onClick={() => void handleDownload()}
-              >
-                <Download className="size-3.5" />
-              </Button>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex shrink-0 items-center justify-between border-b border-border bg-muted/30 px-4 py-2.5">
+            <div>
+              <h2 className="flex items-center gap-2 text-body-sm font-semibold text-foreground">
+                Result
+                {images.length > 0 && (
+                  <Badge variant="secondary" className="h-5 px-1.5 text-caption tabular-nums">
+                    {images.length}
+                  </Badge>
+                )}
+              </h2>
+              <p className="mt-0.5 text-caption text-muted-foreground">
+                Preview and browse generated versions
+              </p>
             </div>
-          )}
-        </div>
+            {activeImage && (
+              <div className="flex items-center gap-0.5">
+                <FavoriteButton
+                  imageId={activeImage.id}
+                  className="text-amber-500 hover:text-amber-600"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Open preview"
+                  onClick={() => setLightboxOpen(true)}
+                >
+                  <Maximize2 className="size-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Download"
+                  onClick={() => void handleDownload()}
+                >
+                  <Download className="size-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
 
         <div className="surface-canvas p-4">
           {activeImage ? (
@@ -182,19 +183,17 @@ export function HistoryOutputPanel() {
               No versions yet
             </p>
           ) : (
-            <div
-              role="list"
+            <ul
               aria-label="Image versions"
-              className="flex gap-2 overflow-x-auto pb-1"
+              className="flex list-none gap-2 overflow-x-auto pb-1"
             >
               {images.map((image) => {
                 const selected = activeImage?.id === image.id;
                 const isLatest = previewImageId === image.id;
 
                 return (
-                  <div
+                  <li
                     key={image.id}
-                    role="listitem"
                     className={cn(
                       "group relative shrink-0 w-[88px] rounded-lg border p-1 transition-colors",
                       selected
@@ -263,11 +262,12 @@ export function HistoryOutputPanel() {
                         <Trash2 className="size-2.5" />
                       </Button>
                     </div>
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
+        </div>
         </div>
       </section>
 

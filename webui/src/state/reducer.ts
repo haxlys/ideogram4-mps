@@ -1,4 +1,4 @@
-import type { AppAction, FormState, ImageEntry, ModelState, ModelStatus } from "./types";
+import type { AppAction, FormState, ImageEntry, MagicExpandState, ModelState, ModelStatus } from "./types";
 import { DEFAULT_FORM, MAX_GEN_QUEUE_SIZE } from "./types";
 import { buildCaptionJson, captionToForm } from "@/validation/caption";
 
@@ -17,6 +17,7 @@ export interface AppState {
   selectedPromptId: number | null;
   historyRefresh: number;
   favoritesRefresh: number;
+  magicExpand: MagicExpandState;
 }
 
 export const initialState: AppState = {
@@ -32,6 +33,7 @@ export const initialState: AppState = {
   selectedPromptId: null,
   historyRefresh: 0,
   favoritesRefresh: 0,
+  magicExpand: { status: "idle", requestId: 0, model: null, error: null, pending: null },
 };
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -124,6 +126,63 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       const form = { ...state.form, els, rawJson: JSON.stringify(buildCaptionJson({ ...state.form, els }), null, 2) };
       return { ...state, form };
     }
+
+    case "MAGIC_EXPAND_START":
+      return {
+        ...state,
+        magicExpand: {
+          status: "running",
+          requestId: state.magicExpand.requestId + 1,
+          model: null,
+          error: null,
+          pending: action.payload,
+        },
+      };
+
+    case "MAGIC_EXPAND_SUCCEEDED": {
+      const jsonValue = action.rawJson;
+      let nextForm = { ...state.form, rawJson: jsonValue };
+      if (jsonValue.trim()) {
+        try {
+          const caption = JSON.parse(jsonValue);
+          const patch = captionToForm(caption);
+          const { rawJson: ignoredRawJson, ...formPatch } = patch;
+          void ignoredRawJson;
+          nextForm = { ...state.form, ...formPatch, rawJson: jsonValue };
+        } catch {
+          nextForm = { ...state.form, rawJson: jsonValue };
+        }
+      }
+      return {
+        ...state,
+        form: nextForm,
+        magicExpand: {
+          status: "done",
+          requestId: state.magicExpand.requestId,
+          model: action.model,
+          error: null,
+          pending: null,
+        },
+      };
+    }
+
+    case "MAGIC_EXPAND_FAILED":
+      return {
+        ...state,
+        magicExpand: {
+          status: "error",
+          requestId: state.magicExpand.requestId,
+          model: null,
+          error: action.error,
+          pending: null,
+        },
+      };
+
+    case "MAGIC_EXPAND_DISMISS":
+      return {
+        ...state,
+        magicExpand: { status: "idle", requestId: state.magicExpand.requestId, model: null, error: null, pending: null },
+      };
 
     case "ENQUEUE_JOB":
       if (state.genQueue.length >= MAX_GEN_QUEUE_SIZE) return state;

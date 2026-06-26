@@ -1,6 +1,7 @@
 import { useAppState } from "@/state/context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ColorPaletteField } from "@/components/ColorPaletteField";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -123,15 +124,11 @@ export function StyleSettings() {
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="cp" className="text-[13px] font-medium">Color Palette (comma-separated hex)</Label>
-          <Input
-            id="cp"
-            placeholder="e.g. #F5F0EB, #FFFFFF, #1A1A1A"
-            value={state.form.cp}
-            onChange={(e) => dispatch({ type: "SET_FORM", form: { cp: e.target.value } })}
-          />
-        </div>
+        <ColorPaletteField
+          id="cp"
+          value={state.form.cp}
+          onChange={(cp) => dispatch({ type: "SET_FORM", form: { cp } })}
+        />
       </CardContent>
     </Card>
   );

@@ -1,3 +1,4 @@
+import { formatColorPalette, parseColorPalette } from "@/lib/colorPalette";
 import type { FormState, FormElement } from "@/state/types";
 
 export function captionToForm(caption: Record<string, unknown>): Partial<FormState> {
@@ -25,19 +26,14 @@ export function captionToForm(caption: Record<string, unknown>): Partial<FormSta
     light: String(sd.lighting || ""),
     med: String(sd.medium || "photograph") as FormState["med"],
     cam: String(sd.photo || sd.art_style || ""),
-    cp: cpArr.join(", "),
+    cp: formatColorPalette(parseColorPalette(cpArr.join(", "))),
     bg: String(cd.background || ""),
     els,
   };
 }
 
 export function buildCaptionJson(form: FormState) {
-  const cp = form.cp
-    .split(",")
-    .flatMap((s) => {
-      const t = s.trim();
-      return t ? [t] : [];
-    });
+  const cp = parseColorPalette(form.cp);
 
   const style = {
     aesthetics: form.aes || undefined,

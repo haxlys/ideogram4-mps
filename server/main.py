@@ -10,6 +10,7 @@ import os
 import threading
 import time
 
+from typing import Any
 import requests
 from urllib.parse import urlparse
 
@@ -100,7 +101,13 @@ def _daemon_url(path: str) -> str:
     return f"{MODEL_DAEMON_URL}{path if path.startswith('/') else '/' + path}"
 
 
-def _daemon_json(method: str, path: str, *, json_body: object | None = None, timeout: float | None = None):
+def _daemon_json(
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, Any] | list[Any] | None = None,
+    timeout: float | None = None,
+) -> dict[str, Any] | JSONResponse:
     try:
         resp = requests.request(
             method,
@@ -537,7 +544,10 @@ def api_task_status(task_id: str):
         return daemon_status
 
     image = local_task.get("image") if local_task else None
-    meta = daemon_status.get("image_meta") or {}
+    if not isinstance(daemon_status, dict):
+        return daemon_status
+    raw_meta = daemon_status.get("image_meta") or {}
+    meta = raw_meta if isinstance(raw_meta, dict) else {}
 
     if daemon_status.get("state") == "done" and daemon_status.get("has_artifact") and not image:
         try:

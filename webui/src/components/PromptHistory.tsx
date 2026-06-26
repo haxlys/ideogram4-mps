@@ -7,12 +7,18 @@ import { formSeedFromImage, imageEntryFromRow, pickHistoryPreviewImage } from "@
 import { groupByLocalDate } from "@/lib/date";
 import type { PromptEntry } from "@/state/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FavoriteButton } from "@/components/FavoriteButton";
-import { useFavorites } from "@/state/favoritesContext";
-import { Trash2 } from "lucide-react";
-import { toast } from "sonner";
-
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { aspectRatioFromSize } from "@/lib/aspectRatio";
 import { presetShortLabel } from "@/lib/presetLabels";
+import { useFavorites } from "@/state/favoritesContext";
+import { MoreVertical, Star, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 interface PromptHistoryProps {
   sidebar?: boolean;
@@ -26,77 +32,88 @@ interface HistoryEntryRowProps {
 }
 
 function HistoryEntryRow({ entry, active, onRestore, onDelete }: HistoryEntryRowProps) {
-  const { isFavoritePrompt } = useFavorites();
+  const { isFavoritePrompt, toggleFavorite } = useFavorites();
   const favorited = entry._id != null && isFavoritePrompt(entry._id);
+  const savedAt = new Date(entry._savedAt);
+  const timeLabel = Number.isNaN(savedAt.getTime())
+    ? ""
+    : savedAt.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+  const mp = ((entry.w * entry.h) / 1e6).toFixed(2);
+  const ratio = aspectRatioFromSize(entry.w, entry.h);
+  const titleLine = entry.hld.trim() || "(empty)";
+
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className={
-        "relative w-full rounded-lg px-3 py-2.5 text-left transition-colors group cursor-pointer "
-        + (active ? "bg-accent" : "hover:bg-accent/60")
-      }
-      onClick={() => onRestore(entry)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onRestore(entry);
+    <div className="group relative flex items-start gap-1.5 rounded-lg transition-colors">
+      <button
+        type="button"
+        className={
+          "relative min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors "
+          + (active ? "bg-accent" : "hover:bg-accent/60")
         }
-      }}
-    >
-      {active && (
-        <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-foreground" />
-      )}
-      <div className="flex items-start gap-2">
-        <div className="truncate flex-1 min-w-0">
-          <div className="truncate text-body-sm font-medium text-foreground">
-            {entry.hld.slice(0, 60) || "(empty)"}
+        onClick={() => onRestore(entry)}
+      >
+        {active && (
+          <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-foreground" />
+        )}
+        <div className="min-w-0 space-y-1">
+          <div className="line-clamp-2 text-body-sm font-medium leading-snug text-foreground">
+            {titleLine}
           </div>
-          <div className="mt-1 flex items-center gap-2 text-caption text-muted-foreground">
-            <span className="rounded-md bg-muted px-1.5 py-0.5">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-muted-foreground">
+            <span className="rounded-md bg-muted px-1.5 py-0.5 font-medium text-foreground/90">
               {presetShortLabel(entry.preset)}
             </span>
-            <span>{entry.w}×{entry.h}</span>
-            <span>
-              {new Date(entry._savedAt).toLocaleTimeString(undefined, {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+            <span className="tabular-nums">
+              {entry.w}×{entry.h}
             </span>
+            <span>{ratio}</span>
+            <span>{mp} MP</span>
+
+            {timeLabel ? <span className="tabular-nums">{timeLabel}</span> : null}
+            {favorited ? (
+              <Star className="size-2.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden />
+            ) : null}
           </div>
         </div>
-        {entry._id != null && (
-          <FavoriteButton
-            promptId={entry._id}
-            className={
-              "size-6 shrink-0 "
-              + (favorited
-                ? "opacity-100"
-                : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100")
-            }
-            size="icon-sm"
-          />
-        )}
-        <span
-          role="button"
-          tabIndex={0}
-          aria-label={`Delete ${entry.hld.slice(0, 20) || "prompt"}`}
-          className="size-6 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center justify-center rounded-md transition-colors hover:bg-muted cursor-pointer"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(entry);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              e.stopPropagation();
-              onDelete(entry);
-            }
-          }}
-        >
-          <Trash2 className="size-3" />
-        </span>
+      </button>
+
+      <div className="shrink-0 pt-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-foreground opacity-100 outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-sm:opacity-100 [@media(hover:none)]:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 data-popup-open:opacity-100"
+            aria-label="Entry actions"
+          >
+            <MoreVertical className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="bottom" className="min-w-[11rem]">
+            {entry._id != null ? (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void toggleFavorite({ prompt_id: entry._id! });
+                }}
+              >
+                <Star className={favorited ? "fill-amber-400 text-amber-500" : ""} />
+                {favorited ? "Remove favorite" : "Add to favorites"}
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(entry);
+              }}
+            >
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
