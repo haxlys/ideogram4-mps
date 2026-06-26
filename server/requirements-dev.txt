@@ -1,0 +1,2 @@
+# Optional: OMP / IDE language servers (install into project .venv)
+pyright>=1.1.390

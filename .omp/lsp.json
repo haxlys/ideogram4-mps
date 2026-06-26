@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "pyright": {
+      "command": ".venv/bin/pyright-langserver",
+      "args": ["--stdio"]
+    },
+    "typescript-language-server": {
+      "command": "webui/node_modules/.bin/typescript-language-server",
+      "args": ["--stdio"]
+    }
+  }
+}

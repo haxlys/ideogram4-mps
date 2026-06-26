@@ -117,6 +117,25 @@ def check_webui() -> None:
         ok("WebUI dependencies appear installed")
 
 
+def check_lsp_optional() -> None:
+    pyright = ROOT / ".venv" / "bin" / "pyright-langserver"
+    tsserver = WEBUI / "node_modules" / ".bin" / "typescript-language-server"
+    if pyright.is_file():
+        ok(f"OMP LSP (optional): pyright-langserver at {pyright}")
+    else:
+        warn(
+            "OMP LSP (optional): pyright-langserver missing. "
+            "Run: .venv/bin/python -m pip install -r server/requirements-dev.txt"
+        )
+    if tsserver.is_file():
+        ok(f"OMP LSP (optional): typescript-language-server at {tsserver}")
+    else:
+        warn(
+            "OMP LSP (optional): typescript-language-server missing. "
+            "Run: cd webui && pnpm install"
+        )
+
+
 def check_model() -> None:
     model_path = env("IDEOGRAM4_MODEL_PATH")
     model_repo = env("IDEOGRAM4_MODEL_REPO", "MLXBits/ideogram-4-mlx-q8")
@@ -212,6 +231,7 @@ def main() -> int:
     print("")
     check_python()
     check_webui()
+    check_lsp_optional()
     check_model()
     check_lora()
     check_magic_prompt()
