@@ -109,10 +109,10 @@ cd webui && pnpm install
 - The model root must contain `split_model.json`. Use `IDEOGRAM4_MODEL_PATH` for
   a local directory or `IDEOGRAM4_MODEL_REPO` for Hugging Face download.
 - `mflux` is pinned to PR #445 commit
-  `8d80b9cb53688b62a2f814604b9f8b48987c5acd` until the MLXBits q8 loader lands
-  in a stable mflux release. As of 2026-06-26, stable mflux `0.18.0` is still
-  the latest PyPI release and has Ideogram 4 FP8 support, but the mlx-forge q8
-  loader PR remains open.
+  `8d80b9cb53688b62a2f814604b9f8b48987c5acd` until the MLXBits split-checkpoint
+  loader lands in a stable mflux release. As of 2026-06-26, stable mflux
+  `0.18.0` is still the latest PyPI release and has Ideogram 4 FP8 support, but
+  the mlx-forge split-checkpoint loader PR remains open.
 - Do not reintroduce `torch`, `safetensors.torch`, or direct `ideogram4`
   pipeline imports in runtime code.
 - Generation uses `threading.Thread`, not `asyncio`. MLX work runs in the model

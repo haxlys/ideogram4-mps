@@ -17,6 +17,7 @@ output/
 outputs/
 server/output/
 server/data/
+examples/benchmarks/
 
 # Runtime logs
 logs/

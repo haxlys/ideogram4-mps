@@ -100,7 +100,7 @@ for pkg in ["mlx", "mflux"]:
 
     req = REQUIREMENTS.read_text()
     if "8d80b9cb53688b62a2f814604b9f8b48987c5acd" in req:
-        ok("mflux is pinned to the MLXBits q8 loader commit")
+        ok("mflux is pinned to the MLXBits split-checkpoint loader commit")
     else:
         warn("mflux pin does not reference the expected PR #445 commit")
 
