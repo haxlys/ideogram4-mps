@@ -104,6 +104,8 @@ export interface MagicExpandPayload {
   width: number;
   height: number;
   imagesB64: string[] | null;
+  /** After a successful LLM expand, enqueue image generation automatically. */
+  enqueueAfter?: boolean;
 }
 
 export interface MagicExpandState {

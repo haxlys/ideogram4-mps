@@ -1,6 +1,7 @@
 import type { AppAction, FormState, ImageEntry, MagicExpandState, ModelState, ModelStatus } from "./types";
 import { DEFAULT_FORM, MAX_GEN_QUEUE_SIZE } from "./types";
 import { buildCaptionJson, captionToForm } from "@/validation/caption";
+import { queuedJobCount } from "@/lib/genQueueDedupe";
 
 import type { GenJob } from "./types";
 
@@ -185,7 +186,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
 
     case "ENQUEUE_JOB":
-      if (state.genQueue.length >= MAX_GEN_QUEUE_SIZE) return state;
+      if (queuedJobCount(state.genQueue) >= MAX_GEN_QUEUE_SIZE) return state;
       return {
         ...state,
         genQueue: [...state.genQueue, action.job],

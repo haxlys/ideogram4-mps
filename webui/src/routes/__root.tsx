@@ -22,6 +22,13 @@ export const Route = createRootRoute({
   component: RootLayout,
 });
 
+/** Hooks that need ConfirmDialogProvider (enqueue / magic expand). */
+function AppRuntimeHooks() {
+  useGenerationQueue();
+  useMagicPromptExpandRunner();
+  return null;
+}
+
 function RootLayout() {
   const { dispatch } = useAppState();
   const isLgUp = useMediaQuery("(min-width: 1024px)");
@@ -30,8 +37,6 @@ function RootLayout() {
   const sidebarCollapsed = isLgUp ? desktopSidebarCollapsed : !mobileSidebarOpen;
   const navigate = useNavigate();
 
-  useGenerationQueue();
-  useMagicPromptExpandRunner();
 
   const openSidebar = () => {
     if (isLgUp) setDesktopSidebarCollapsed(false);
@@ -56,6 +61,7 @@ function RootLayout() {
   return (
     <FavoritesProvider>
       <ConfirmDialogProvider>
+        <AppRuntimeHooks />
         <TooltipProvider>
           <div className="flex h-dvh overflow-hidden bg-background text-foreground">
             {!sidebarCollapsed && !isLgUp && (

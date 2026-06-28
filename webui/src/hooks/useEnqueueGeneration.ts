@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
-import { enqueueGenerationJob } from "@/lib/enqueueGenerationJob";
+import { enqueueGenerationJob, type EnqueueGenerationResult } from "@/lib/enqueueGenerationJob";
 import { useAppState } from "@/state/context";
 import type { GenJob, HistoryLinkMode } from "@/state/types";
 import { toast } from "sonner";
@@ -11,6 +11,10 @@ export interface EnqueueOptions {
   newSeed?: boolean;
   /** Skip caption verify (e.g. authoritative raw JSON from Magic Prompt). */
   skipVerify?: boolean;
+  /** Use this caption JSON for the job (avoids stale form right after Magic Prompt). */
+  captionRawJson?: string;
+  /** When true, do not show the default success toast (caller shows its own). */
+  silent?: boolean;
 }
 
 function isPendingJob(job: GenJob) {
@@ -29,18 +33,18 @@ export function useEnqueueGeneration() {
   const hasPendingJobs = state.genQueue.some(isPendingJob);
   const canGenerate = state.modelState === "loaded";
   const hasActiveHistory = state.selectedPromptId != null;
-
-  const enqueue = useCallback(async (options: EnqueueOptions) => {
-    const { historyLink, newSeed = false, skipVerify = false } = options;
+  const enqueue = useCallback(async (options: EnqueueOptions): Promise<EnqueueGenerationResult> => {
+    const { historyLink, newSeed = false, skipVerify = false, captionRawJson, silent = false } = options;
 
     const result = await enqueueGenerationJob(dispatch, {
       form: state.form,
-      genQueueLength: state.genQueue.length,
+      genQueue: state.genQueue,
       modelLoaded: canGenerate,
       selectedPromptId: state.selectedPromptId,
       historyLink,
       newSeed,
       skipVerify,
+      captionRawJson,
       confirmWarnings: async (warnings) => confirm({
         title: "Caption verification warnings",
         description: warnings.join("\n"),
@@ -52,22 +56,24 @@ export function useEnqueueGeneration() {
       if (result.reason !== "Cancelled.") {
         toast.error(result.reason);
       }
-      return;
+      return result;
     }
 
     if (newSeed || !state.form.seed.trim()) {
       dispatch({ type: "SET_FORM", form: { seed: result.job.formSnapshot.seed } });
     }
-
-    const actionLabel = historyLink === "regenerate" ? "Regeneration" : "New generation";
-    toast.success(hasPendingJobs ? `${actionLabel} added to queue` : `${actionLabel} queued`);
+    if (!silent) {
+      const actionLabel = historyLink === "regenerate" ? "Regeneration" : "New generation";
+      toast.success(hasPendingJobs ? `${actionLabel} added to queue` : `${actionLabel} queued`);
+    }
+    return result;
   }, [
     canGenerate,
     confirm,
     dispatch,
     hasPendingJobs,
     state.form,
-    state.genQueue.length,
+    state.genQueue,
     state.selectedPromptId,
   ]);
 

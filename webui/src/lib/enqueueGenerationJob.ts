@@ -4,15 +4,18 @@ import type { AppAction, FormState, GenJob, HistoryLinkMode } from "@/state/type
 import { MAX_GEN_QUEUE_SIZE } from "@/state/types";
 import { randomSeed } from "@/lib/seed";
 import { getCaptionForGeneration, getCaptionHld } from "@/validation/caption";
+import { findDuplicatePendingJob, generationRequestFingerprint, queuedJobCount } from "@/lib/genQueueDedupe";
 
 export interface EnqueueGenerationInput {
   form: FormState;
-  genQueueLength: number;
+  genQueue: GenJob[];
   modelLoaded: boolean;
   selectedPromptId: number | null;
   historyLink: HistoryLinkMode;
   newSeed?: boolean;
   skipVerify?: boolean;
+  /** Overrides form.rawJson for this job (e.g. fresh Magic Prompt output). */
+  captionRawJson?: string;
   confirmWarnings?: (warnings: string[]) => Promise<boolean>;
 }
 
@@ -27,21 +30,25 @@ export async function enqueueGenerationJob(
   if (!input.modelLoaded) {
     return { ok: false, reason: "Model is not loaded. Please load the model first." };
   }
-  if (input.genQueueLength >= MAX_GEN_QUEUE_SIZE) {
+  if (queuedJobCount(input.genQueue) >= MAX_GEN_QUEUE_SIZE) {
     return { ok: false, reason: `Queue is full (max ${MAX_GEN_QUEUE_SIZE}).` };
   }
   if (input.historyLink === "regenerate" && input.selectedPromptId == null) {
     return { ok: false, reason: "Open a history entry to regenerate." };
   }
 
+  const formForJob: FormState = input.captionRawJson != null && input.captionRawJson.trim()
+    ? { ...input.form, rawJson: input.captionRawJson }
+    : input.form;
+
   let caption: Record<string, unknown>;
   try {
-    caption = getCaptionForGeneration(input.form);
+    caption = getCaptionForGeneration(formForJob);
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "Raw JSON is invalid." };
   }
 
-  if (!input.skipVerify && !input.form.rawJson.trim()) {
+  if (!input.skipVerify && !formForJob.rawJson.trim()) {
     try {
       const verifyRes = await verifyCaption(caption);
       if (!verifyRes.valid && verifyRes.warnings.length > 0 && input.confirmWarnings) {
@@ -53,6 +60,21 @@ export async function enqueueGenerationJob(
     }
   }
 
+  const historyLinkMode = input.historyLink;
+  const promptIdForJob = historyLinkMode === "regenerate" ? input.selectedPromptId ?? undefined : undefined;
+  const fingerprint = generationRequestFingerprint(
+    caption,
+    formForJob.w,
+    formForJob.h,
+    formForJob.preset,
+    formForJob.format,
+    historyLinkMode,
+    promptIdForJob,
+  );
+  if (findDuplicatePendingJob(input.genQueue, fingerprint)) {
+    return { ok: false, reason: "This generation is already queued or running." };
+  }
+
   const resolvedSeed = input.newSeed
     ? randomSeed()
     : input.form.seed.trim()
@@ -60,11 +82,11 @@ export async function enqueueGenerationJob(
       : randomSeed();
   const seedForForm = String(resolvedSeed);
 
-  const label = getCaptionHld(caption, input.form.hld).trim() || "Untitled";
+  const label = getCaptionHld(caption, formForJob.hld).trim() || "Untitled";
   const formSnapshot: FormState = {
-    ...input.form,
+    ...formForJob,
     seed: seedForForm,
-    hld: getCaptionHld(caption, input.form.hld),
+    hld: getCaptionHld(caption, formForJob.hld),
   };
   const job: GenJob = {
     id: crypto.randomUUID(),
@@ -79,11 +101,11 @@ export async function enqueueGenerationJob(
     createdAt: Date.now(),
     request: {
       caption,
-      width: input.form.w,
-      height: input.form.h,
-      preset: input.form.preset,
+      width: formForJob.w,
+      height: formForJob.h,
+      preset: formForJob.preset,
       seed: resolvedSeed,
-      format: input.form.format,
+      format: formForJob.format,
     },
   };
 

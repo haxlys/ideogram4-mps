@@ -2,6 +2,7 @@ import { useReducer, useRef, useCallback, useEffect, useState } from "react";
 import { useAppState } from "@/state/context";
 import { getMagicPromptStatus } from "@/api/client";
 import { useEnqueueGeneration } from "@/hooks/useEnqueueGeneration";
+import { hasSubstantiveCaptionJson, magicPromptBlockingReason } from "@/lib/quickPromptFlow";
 import { aspectRatioFromSize } from "@/lib/aspectRatio";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -92,16 +93,6 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-function hasUsableCaptionJson(rawJson: string): boolean {
-  const trimmed = rawJson.trim();
-  if (!trimmed) return false;
-  try {
-    const parsed: unknown = JSON.parse(trimmed);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-  } catch {
-    return false;
-  }
-}
 
 function magicStatusHint(status: MagicPromptStatus | null, settingsError: string | null, checked: boolean): string | null {
   if (!checked) return null;
@@ -124,10 +115,15 @@ export function QuickPrompt() {
   const imagesRef = useRef<File[]>([]);
   const status = quickState.settings.status;
   const expanding = appState.magicExpand.status === "running";
+  const expandThenGenerate = appState.magicExpand.pending?.enqueueAfter === true;
   const targetAspectRatio = aspectRatioFromSize(appState.form.w, appState.form.h);
-  const canGenerateFromJson = hasUsableCaptionJson(appState.form.rawJson);
+  const quickTrimmed = quickState.text.trim();
+  const hasQuickInput = quickTrimmed.length > 0 || quickState.previews.length > 0;
+  const hasReadyJson = hasSubstantiveCaptionJson(appState.form.rawJson);
+  const magicBlocked = magicPromptBlockingReason(status);
+  const generateNeedsLlm = hasQuickInput && !hasReadyJson;
   const statusProblem = magicStatusHint(status, quickState.settings.error, quickState.settings.checked);
-  const showExamples = quickState.text.trim().length === 0;
+  const showExamples = quickTrimmed.length === 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -188,26 +184,24 @@ export function QuickPrompt() {
     }
   };
 
-  const handleExpand = async () => {
+  const startMagicExpand = async (enqueueAfter: boolean) => {
     const trimmed = quickState.text.trim();
     const images = imagesRef.current;
     if (!trimmed && images.length === 0) {
       toast.error("Enter a prompt or attach a reference image");
       return;
     }
-    if (status && !status.enabled) {
-      toast.error("Magic Prompt is disabled. Configure IDEOGRAM4_MAGIC_PROMPT_* to enable it.");
-      return;
-    }
-    if (status && !status.configured) {
-      const reason = status.missing_env.length > 0
-        ? status.missing_env.join(", ")
-        : status.llm_error ?? "LLM is not reachable";
-      toast.error(`Magic Prompt is not configured: ${reason}`);
+    const blockReason = magicPromptBlockingReason(status);
+    if (blockReason) {
+      toast.error(blockReason);
       return;
     }
     if (expanding) {
-      toast.message("Already expanding — you can leave this page; we will notify you when done.");
+      toast.message(
+        enqueueAfter
+          ? "Already structuring — generation will queue when the LLM finishes."
+          : "Already expanding — you can leave this page; we will notify you when done.",
+      );
       return;
     }
 
@@ -220,21 +214,40 @@ export function QuickPrompt() {
           width: appState.form.w,
           height: appState.form.h,
           imagesB64: b64s,
+          enqueueAfter,
         },
       });
       clearAttachedImages();
-      toast.message("Expanding… You can browse other pages.", { duration: 6000 });
+      toast.message(
+        enqueueAfter
+          ? "Structuring with LLM, then queueing generation…"
+          : "Expanding… You can browse other pages.",
+        { duration: 6000 },
+      );
     } catch (e) {
       toast.error(`Failed to start expansion: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
-  const handleGenerateFromJson = () => {
-    void enqueue({
-      historyLink: "new",
-      newSeed: true,
-      skipVerify: true,
-    });
+  const handleExpand = () => {
+    void startMagicExpand(false);
+  };
+
+  const handleGenerate = () => {
+    if (!canGenerate) return;
+    if (hasReadyJson) {
+      void enqueue({
+        historyLink: "new",
+        newSeed: true,
+        skipVerify: true,
+      });
+      return;
+    }
+    if (hasQuickInput) {
+      void startMagicExpand(true);
+      return;
+    }
+    toast.error("Describe your image, or expand / add structured JSON first");
   };
 
   return (
@@ -254,7 +267,9 @@ export function QuickPrompt() {
       {expanding && (
         <p className="flex items-center gap-2 text-caption text-muted-foreground">
           <Spinner className="size-3.5 shrink-0" />
-          Expanding with LLM — safe to leave; we will notify you.
+          {expandThenGenerate
+            ? "Structuring with LLM, then queueing generation…"
+            : "Expanding with LLM — safe to leave; we will notify you."}
         </p>
       )}
 
@@ -289,7 +304,7 @@ export function QuickPrompt() {
             variant="outline"
             size="sm"
             className="flex-1 sm:flex-none"
-            onClick={() => void handleExpand()}
+            onClick={handleExpand}
             disabled={expanding || Boolean(status && !status.configured)}
           >
             {expanding ? <Spinner className="mr-1.5 size-3.5" /> : <Wand2 className="mr-1.5 size-3.5" />}
@@ -299,9 +314,26 @@ export function QuickPrompt() {
             variant="generate"
             size="sm"
             className="flex-1 sm:flex-none"
-            onClick={handleGenerateFromJson}
-            disabled={!canGenerate || !canGenerateFromJson || expanding}
-            title={!canGenerateFromJson ? "Expand first or add JSON in the JSON tab" : undefined}
+            onClick={handleGenerate}
+            disabled={
+              !canGenerate
+              || expanding
+              || (generateNeedsLlm && Boolean(magicBlocked))
+              || (!hasReadyJson && !hasQuickInput)
+            }
+            title={
+              !canGenerate
+                ? "Load the image model first"
+                : expanding
+                  ? "Wait for the LLM to finish"
+                  : generateNeedsLlm && magicBlocked
+                    ? magicBlocked
+                    : !hasReadyJson && !hasQuickInput
+                      ? "Enter a description or add JSON in the JSON tab"
+                      : generateNeedsLlm
+                        ? "Runs Magic Prompt LLM, then queues generation"
+                        : undefined
+            }
           >
             <Play className="mr-1.5 size-3.5" />
             Generate
@@ -311,7 +343,7 @@ export function QuickPrompt() {
 
       <QuickPromptJsonPanel
         generatedJson={generatedJson}
-        ready={canGenerateFromJson}
+        ready={hasReadyJson}
         copied={copied}
         onCopy={() => void handleCopyJson()}
       />

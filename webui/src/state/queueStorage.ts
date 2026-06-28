@@ -64,6 +64,9 @@ function normalizeRestoredJob(job: GenJob): GenJob {
   if (job.status === "submitting" || job.status === "waiting") {
     return { ...job, status: "queued", msg: "Queued" };
   }
+  if (job.status === "running" || job.status === "cancelling") {
+    return { ...job, status: "error", msg: "Interrupted by reload", error: "Interrupted by reload" };
+  }
   return job;
 }
 
@@ -73,9 +76,29 @@ export function loadQueueState(): PersistedQueueState {
     if (!raw) return { genQueue: [], genQueueExpanded: false };
 
     const parsed = JSON.parse(raw) as Partial<PersistedQueueState>;
-    const genQueue = Array.isArray(parsed.genQueue)
+    let genQueue = Array.isArray(parsed.genQueue)
       ? parsed.genQueue.map(parseGenJob).filter((job): job is GenJob => job != null).map(normalizeRestoredJob)
       : [];
+
+    const seen = new Set<string>();
+    const deduped: GenJob[] = [];
+    for (const job of genQueue) {
+      if (job.status === "queued" || job.status === "waiting") {
+        const key = JSON.stringify({
+          c: job.request.caption,
+          w: job.request.width,
+          h: job.request.height,
+          p: job.request.preset,
+          f: job.request.format,
+          m: job.historyLinkMode,
+          pid: job.promptId ?? null,
+        });
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      deduped.push(job);
+    }
+    genQueue = deduped;
 
     const hasActiveJobs = genQueue.some((job) => ACTIVE_STATUSES.includes(job.status));
 
