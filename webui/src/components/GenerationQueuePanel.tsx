@@ -212,6 +212,28 @@ function JobRow({
   );
 }
 
+function PreparingMagicPromptRow() {
+  return (
+    <div className="flex items-start gap-2 px-4 py-2.5 border-b border-border/60 last:border-b-0 bg-muted/20">
+      <Spinner className="mt-0.5 size-3.5 shrink-0" />
+      <div className="flex-1 min-w-0 space-y-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant="default" className="shrink-0 text-[10px] px-1.5 py-0">
+            Preparing
+          </Badge>
+          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0">
+            Magic Prompt
+          </Badge>
+          <span className="text-xs font-medium truncate">Structuring prompt</span>
+        </div>
+        <p className="text-[11px] truncate text-muted-foreground">
+          Generation will queue when the LLM finishes.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 const QUEUE_FILTERS: { value: GenQueueFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "queue", label: "Queue" },
@@ -235,8 +257,10 @@ export function GenerationQueuePanel() {
   const [previewImage, setPreviewImage] = useState<ImageEntry | null>(null);
   const { genQueue, genQueueExpanded } = state;
   const { activeJobs, scrollableJobs } = partitionJobsForDisplay(genQueue, queueFilter);
+  const preparingMagicPrompt =
+    state.magicExpand.status === "running" && state.magicExpand.pending?.enqueueAfter === true;
 
-  if (genQueue.length === 0) return null;
+  if (genQueue.length === 0 && !preparingMagicPrompt) return null;
 
   const activeJob = findPrimaryActiveJob(genQueue);
   const queuedCount = genQueue.filter(isQueuedJob).length;
@@ -258,17 +282,20 @@ export function GenerationQueuePanel() {
           {(activeJob?.status === "running"
             || activeJob?.status === "submitting"
             || activeJob?.status === "cancelling"
-            || activeJob?.status === "waiting") && (
+            || activeJob?.status === "waiting"
+            || preparingMagicPrompt) && (
             <Spinner className="size-3.5 shrink-0" />
           )}
           <span className="text-xs font-medium truncate">
             {activeJob
               ? activeJob.label
+              : preparingMagicPrompt
+                ? "Structuring prompt"
               : `${genQueue.length} generation${genQueue.length === 1 ? "" : "s"}`}
           </span>
-          {activeJob && (
+          {(activeJob || preparingMagicPrompt) && (
             <span className="text-[11px] text-muted-foreground truncate hidden sm:inline">
-              {activeJob.msg}
+              {activeJob ? activeJob.msg : "Generation will queue when the LLM finishes"}
             </span>
           )}
         </div>
@@ -303,7 +330,7 @@ export function GenerationQueuePanel() {
           <div className="shrink-0 space-y-2 border-b border-border/60 bg-muted/30 px-4 py-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-medium text-muted-foreground">
-                Generation queue ({genQueue.length})
+                Generation queue ({genQueue.length || "preparing"})
               </span>
               <div className="flex items-center gap-1">
                 {activeJob && (
@@ -372,12 +399,13 @@ export function GenerationQueuePanel() {
               })}
             </div>
           </div>
-          {activeJobs.length > 0 && (
+          {(preparingMagicPrompt || activeJobs.length > 0) && (
             <div
               role="list"
               aria-label="Active generation jobs"
               className="shrink-0 border-b border-border/60 bg-muted/20"
             >
+              {preparingMagicPrompt && <PreparingMagicPromptRow />}
               {activeJobs.map((job) => (
                 <JobRow
                   key={job.id}

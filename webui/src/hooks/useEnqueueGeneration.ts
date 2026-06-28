@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useConfirm } from "@/components/ConfirmDialogProvider";
 import { enqueueGenerationJob, type EnqueueGenerationResult } from "@/lib/enqueueGenerationJob";
 import { useAppState } from "@/state/context";
@@ -29,18 +29,26 @@ function isPendingJob(job: GenJob) {
 export function useEnqueueGeneration() {
   const { state, dispatch } = useAppState();
   const confirm = useConfirm();
+  const stateRef = useRef(state);
 
   const hasPendingJobs = state.genQueue.some(isPendingJob);
   const canGenerate = state.modelState === "loaded";
   const hasActiveHistory = state.selectedPromptId != null;
+
+  useEffect(() => {
+    stateRef.current = state;
+  });
+
   const enqueue = useCallback(async (options: EnqueueOptions): Promise<EnqueueGenerationResult> => {
     const { historyLink, newSeed = false, skipVerify = false, captionRawJson, silent = false } = options;
+    const latest = stateRef.current;
+    const latestHasPendingJobs = latest.genQueue.some(isPendingJob);
 
     const result = await enqueueGenerationJob(dispatch, {
-      form: state.form,
-      genQueue: state.genQueue,
-      modelLoaded: canGenerate,
-      selectedPromptId: state.selectedPromptId,
+      form: latest.form,
+      genQueue: latest.genQueue,
+      modelLoaded: latest.modelState === "loaded",
+      selectedPromptId: latest.selectedPromptId,
       historyLink,
       newSeed,
       skipVerify,
@@ -59,22 +67,17 @@ export function useEnqueueGeneration() {
       return result;
     }
 
-    if (newSeed || !state.form.seed.trim()) {
+    if (newSeed || !latest.form.seed.trim()) {
       dispatch({ type: "SET_FORM", form: { seed: result.job.formSnapshot.seed } });
     }
     if (!silent) {
       const actionLabel = historyLink === "regenerate" ? "Regeneration" : "New generation";
-      toast.success(hasPendingJobs ? `${actionLabel} added to queue` : `${actionLabel} queued`);
+      toast.success(latestHasPendingJobs ? `${actionLabel} added to queue` : `${actionLabel} queued`);
     }
     return result;
   }, [
-    canGenerate,
     confirm,
     dispatch,
-    hasPendingJobs,
-    state.form,
-    state.genQueue,
-    state.selectedPromptId,
   ]);
 
   return {
